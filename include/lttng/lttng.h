@@ -106,6 +106,103 @@ extern int lttng_stop_tracing(const char *session_name);
 extern int lttng_stop_tracing_no_wait(const char *session_name);
 
 /*
+ * Add context to event(s) for a specific channel (or for all).
+ *
+ * If channel_name is NULL, a lookup of the event's channel is done. If both
+ * are NULL, the context is applied to all events of all channels.
+ *
+ * Note that whatever event_name value is, a context can not be added to an
+ * event, so we just ignore it for now.
+ */
+extern int lttng_add_context(struct lttng_handle *handle,
+		struct lttng_event_context *ctx, const char *event_name,
+		const char *channel_name);
+
+/*
+ * Create or enable an event (or events) for a channel.
+ *
+ * If the event you are trying to enable does not exist, it will be created,
+ * else it is enabled.
+ * If channel_name is NULL, the default channel is used (channel0).
+ *
+ * The handle and ev params can not be NULL.
+ */
+extern int lttng_enable_event(struct lttng_handle *handle,
+		struct lttng_event *ev, const char *channel_name);
+
+/*
+ * Create or enable an event with a specific filter.
+ *
+ * If the event you are trying to enable does not exist, it will be created,
+ * else it is enabled.
+ * If ev is NULL, all events are enabled with that filter.
+ * If channel_name is NULL, the default channel is used (channel0) and created
+ * if not found.
+ * If filter_expression is NULL, an event without associated filter is
+ * created.
+ */
+extern int lttng_enable_event_with_filter(struct lttng_handle *handle,
+		struct lttng_event *event, const char *channel_name,
+		const char *filter_expression);
+
+/*
+ * Create or enable an event with a filter and/or exclusions.
+ *
+ * If the event you are trying to enable does not exist, it will be created,
+ * else it is enabled.
+ * If ev is NULL, all events are enabled with the filter and exclusion options.
+ * If channel_name is NULL, the default channel is used (channel0) and created
+ * if not found.
+ * If filter_expression is NULL, an event without associated filter is
+ * created.
+ * If exclusion count is zero, the event will be created without exclusions.
+ */
+extern int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
+		struct lttng_event *event, const char *channel_name,
+		const char *filter_expression,
+		int exclusion_count, char **exclusion_names);
+
+/*
+ * Create or enable an event with a filter and/or instrument target.
+ *
+ * If the event you are trying to enable does not exist, it will be created,
+ * else it is enabled.
+ * If ev is NULL, all events are enabled with the filter and exclusion options.
+ * If channel_name is NULL, the default channel is used (channel0) and created
+ * if not found.
+ * If filter_expression is NULL, an event without associated filter is
+ * created.
+ * If target path is NULL, the event will be created without target.
+ */
+extern int lttng_enable_event_with_target(struct lttng_handle *handle,
+		struct lttng_event *event, const char *channel_name,
+		const char *filter_expression, const char *target_path);
+
+/*
+ * Create or enable a channel.
+ *
+ * The chan and handle params can not be NULL.
+ */
+extern int lttng_enable_channel(struct lttng_handle *handle,
+		struct lttng_channel *chan);
+
+/*
+ * Disable event(s) of a channel and domain.
+ *
+ * If name is NULL, all events are disabled.
+ * If channel_name is NULL, the default channel is used (channel0).
+ */
+extern int lttng_disable_event(struct lttng_handle *handle,
+		const char *name, const char *channel_name);
+
+/*
+ * Disable channel.
+ *
+ */
+extern int lttng_disable_channel(struct lttng_handle *handle,
+		const char *name);
+
+/*
  * Calibrate LTTng overhead.
  *
  * The chan and handle params can not be NULL.
