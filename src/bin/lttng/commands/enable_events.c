@@ -133,14 +133,16 @@ static void usage(FILE *ofp)
 	fprintf(ofp, "                             e.g.:\n");
 	fprintf(ofp, "                               \"*\"\n");
 	fprintf(ofp, "                               \"app_component:na*\"\n");
-	fprintf(ofp, "    --probe (addr | symbol | symbol+offset)\n");
+	fprintf(ofp, "    --probe [target@](addr | symbol | symbol+offset)\n");
 	fprintf(ofp, "                           Dynamic probe.\n");
-	fprintf(ofp, "                           Addr and offset can be octal (0NNN...),\n");
-	fprintf(ofp, "                           decimal (NNN...) or hexadecimal (0xNNN...)\n");
-	fprintf(ofp, "    --function (addr | symbol | symbol+offset)\n");
+	fprintf(ofp, "                           - userspace tracer requires specifying an target to instrument.\n");
+	fprintf(ofp, "                           - addr and offset can be octal (0NNN...),\n");
+	fprintf(ofp, "                             decimal (NNN...) or hexadecimal (0xNNN...)\n");
+	fprintf(ofp, "    --function [target@](addr | symbol | symbol+offset)\n");
 	fprintf(ofp, "                           Dynamic function entry/return probe.\n");
-	fprintf(ofp, "                           Addr and offset can be octal (0NNN...),\n");
-	fprintf(ofp, "                           decimal (NNN...) or hexadecimal (0xNNN...)\n");
+	fprintf(ofp, "                           - userspace tracer requires specifying an target to instrument.\n");
+	fprintf(ofp, "                           - addr and offset can be octal (0NNN...),\n");
+	fprintf(ofp, "                             decimal (NNN...) or hexadecimal (0xNNN...)\n");
 #if 0
 	fprintf(ofp, "    --function:entry symbol\n");
 	fprintf(ofp, "                           Function tracer event\n");
