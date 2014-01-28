@@ -28,6 +28,7 @@
 #include <ctype.h>
 
 #include <src/common/sessiond-comm/sessiond-comm.h>
+#include <src/common/utils.h>
 
 /* Mi dependancy */
 #include <common/mi-lttng.h>
@@ -393,6 +394,45 @@ static int loglevel_jul_str_to_value(const char *inputstr)
 }
 
 /*
+ * Parse user-space probe options.
+ */
+static int parse_ust_probe_opts(struct lttng_event *ev, char *target, char *opt)
+{
+	char *pos;
+	int ret;
+
+	if (opt == NULL) {
+		goto error;
+	}
+
+	if (ev->name[strlen(ev->name) - 1] == '*') {
+		ERR("Event %s: Userspace probes cannot be used with wildcarded events", ev->name);
+		goto error;
+	}
+
+	/* Check for pathname */
+	pos = strrchr(opt, '@');
+	if (pos != NULL) {
+		/* Process relative path */
+		*pos = '\0';
+		target = utils_expand_path(opt);
+		if (!target) {
+			ERR("Invalid instrument target: %s", opt);
+			goto error;
+		}
+
+		ret = parse_probe_opts(ev, pos+1);
+		goto end;
+	}
+
+error:
+	ret = -1;
+
+end:
+	return ret;
+}
+
+/*
  * Maps loglevel from string to value
  */
 static
@@ -626,6 +666,7 @@ static int enable_events(char *session_name)
 	struct lttng_domain dom;
 	int exclusion_count = 0;
 	char **exclusion_list = NULL;
+	char *target_path = NULL;
 
 	memset(&ev, 0, sizeof(ev));
 	memset(&dom, 0, sizeof(dom));
@@ -957,7 +998,25 @@ static int enable_events(char *session_name)
 				ev.name[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
 				break;
 			case LTTNG_EVENT_PROBE:
+				/* Free previously allocated path */
+				free(target_path);
+				ret = parse_ust_probe_opts(&ev, target_path, opt_probe);
+				if (ret < 0) {
+					ERR("Unable to parse probe options");
+					ret = 0;
+					goto error;
+				}
+				break;
 			case LTTNG_EVENT_FUNCTION:
+				/* Free previously allocated path */
+				free(target_path);
+				ret = parse_ust_probe_opts(&ev, target_path, opt_function);
+				if (ret < 0) {
+					ERR("Unable to parse function probe options");
+					ret = 0;
+					goto error;
+				}
+				break;
 			case LTTNG_EVENT_FUNCTION_ENTRY:
 			case LTTNG_EVENT_SYSCALL:
 			default:
@@ -1039,11 +1098,17 @@ static int enable_events(char *session_name)
 		if (!opt_filter) {
 			char *exclusion_string;
 
-			command_ret = lttng_enable_event_with_exclusions(handle,
-					&ev, channel_name,
-					NULL, exclusion_count, exclusion_list);
+			if (opt_exclude) {
+				ret = lttng_enable_event_with_exclusions(handle,
+						&ev, channel_name, NULL,
+						exclusion_count, exclusion_list);
+			} else {
+				ret = lttng_enable_event_with_target(handle,
+						&ev, channel_name, NULL, target_path);
+			}
 			exclusion_string = print_exclusions(exclusion_count, exclusion_list);
-			if (command_ret < 0) {
+
+			if (ret < 0) {
 				/* Turn ret to positive value to handle the positive error code */
 				switch (-command_ret) {
 				case LTTNG_ERR_KERN_EVENT_EXIST:
@@ -1085,11 +1150,14 @@ static int enable_events(char *session_name)
 		if (opt_filter) {
 			char *exclusion_string;
 
-			/* Filter present */
-			ev.filter = 1;
-
-			command_ret = lttng_enable_event_with_exclusions(handle, &ev, channel_name,
-					opt_filter, exclusion_count, exclusion_list);
+			if (opt_exclude) {
+				ret = lttng_enable_event_with_exclusions(handle, &ev,
+						channel_name, opt_filter,
+						exclusion_count, exclusion_list);
+			} else {
+				ret = lttng_enable_event_with_target(handle, &ev,
+						channel_name, opt_filter, target_path);
+			}
 			exclusion_string = print_exclusions(exclusion_count, exclusion_list);
 
 			if (command_ret < 0) {
@@ -1191,6 +1259,7 @@ error:
 		}
 		free(exclusion_list);
 	}
+	free(target_path);
 
 	/* Overwrite ret with error_holder if there was an actual error with
 	 * enabling an event.
