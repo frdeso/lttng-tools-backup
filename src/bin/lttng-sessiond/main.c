@@ -3139,6 +3139,7 @@ skip_domain:
 		struct lttng_event_exclusion *exclusion = NULL;
 		struct lttng_filter_bytecode *bytecode = NULL;
 		char *filter_expression = NULL;
+		struct lttng_event_target *target = NULL;
 
 		/* Handle exclusion events and receive it from the client. */
 		if (cmd_ctx->lsm->u.enable.exclusion_count > 0) {
@@ -3233,10 +3234,44 @@ skip_domain:
 			}
 		}
 
+		/* Handle instrument target and get path from client. */
+		if (cmd_ctx->lsm->u.enable.target_len > 0) {
+			size_t target_len = cmd_ctx->lsm->u.enable.target_len;
+
+			if (target_len > PATH_MAX) {
+				ret = LTTNG_ERR_TARGET_INVAL;
+				free(exclusion);
+				free(bytecode);
+				goto error;
+			}
+
+			target = zmalloc(sizeof(*target) + target_len);
+			if (!target) {
+				free(exclusion);
+				free(bytecode);
+				ret = LTTNG_ERR_TARGET_NOMEM;
+				goto error;
+			}
+
+			/* Receive var. len. data */
+			DBG("Receiving var len data target path from client ...");
+			target->path_len = target_len;
+			ret = lttcomm_recv_unix_sock(sock, target->path, target_len);
+			if (ret <= 0) {
+				DBG("Nothing recv() from client var len data... continuing");
+				*sock_error = 1;
+				free(exclusion);
+				free(bytecode);
+				free(target);
+				ret = LTTNG_ERR_TARGET_INVAL;
+				goto error;
+			}
+		}
+
 		ret = cmd_enable_event(cmd_ctx->session, &cmd_ctx->lsm->domain,
 				cmd_ctx->lsm->u.enable.channel_name,
 				&cmd_ctx->lsm->u.enable.event,
-				filter_expression, bytecode, exclusion,
+				filter_expression, bytecode, exclusion, target,
 				kernel_poll_pipe[1]);
 		break;
 	}
