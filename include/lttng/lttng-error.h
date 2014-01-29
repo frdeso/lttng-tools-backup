@@ -133,6 +133,8 @@ enum lttng_error_code {
 	LTTNG_ERR_EXCLUSION_INVAL        = 110, /* Invalid event exclusion data */
 	LTTNG_ERR_EXCLUSION_NOMEM        = 111, /* Lack of memory while processing event exclusions */
 	LTTNG_ERR_INVALID_EVENT_NAME     = 112, /* Invalid event name */
+	LTTNG_ERR_TARGET_INVAL           = 113, /* Invalid event instrument target data */
+	LTTNG_ERR_TARGET_NOMEM           = 114, /* Lack of memory while processing event instrument target */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

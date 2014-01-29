@@ -1357,6 +1357,7 @@ int cmd_enable_event(struct ltt_session *session, struct lttng_domain *domain,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
+		struct lttng_event_target *target,
 		int wpipe)
 {
 	int ret, channel_created = 0;
@@ -1524,7 +1525,7 @@ int cmd_enable_event(struct ltt_session *session, struct lttng_domain *domain,
 		tmp_dom.type = LTTNG_DOMAIN_UST;
 
 		ret = cmd_enable_event(session, &tmp_dom, DEFAULT_JUL_CHANNEL_NAME,
-			&uevent, filter_expression, filter, NULL, wpipe);
+			&uevent, filter_expression, filte, NULL, NULL, wpipe);
 		if (ret != LTTNG_OK && ret != LTTNG_ERR_UST_EVENT_ENABLED) {
 			goto error;
 		}
@@ -1756,7 +1757,7 @@ int cmd_enable_event_all(struct ltt_session *session,
 		tmp_dom.type = LTTNG_DOMAIN_UST;
 
 		ret = cmd_enable_event(session, &tmp_dom, DEFAULT_JUL_CHANNEL_NAME,
-			&uevent, NULL, NULL, NULL, wpipe);
+			&uevent, NULL, NULL, NULL, NULL, wpipe);
 		if (ret != LTTNG_OK && ret != LTTNG_ERR_UST_EVENT_ENABLED) {
 			goto error;
 		}

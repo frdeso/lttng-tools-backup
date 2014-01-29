@@ -321,6 +321,18 @@ struct lttng_event_exclusion {
 } LTTNG_PACKED;
 
 /*
+ * Event instrument target data. At the end of the structure, follows the path
+ * of the instrument target, where the actual length of path is given by
+ * the 'path_len' item of the structure.
+ */
+#define LTTNG_EVENT_TARGET_PADDING	32
+struct lttng_event_target {
+	uint32_t path_len;
+	char padding[LTTNG_EVENT_TARGET_PADDING];
+	char path[0];
+} LTTNG_PACKED;
+
+/*
  * Data structure for the response from sessiond to the lttng client.
  */
 struct lttcomm_lttng_msg {
