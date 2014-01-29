@@ -155,7 +155,8 @@ int trace_ust_ht_match_event_by_name(struct cds_lfht_node *node,
  */
 struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
 		char *name, struct lttng_filter_bytecode *filter, int loglevel,
-		struct lttng_event_exclusion *exclusion);
+		struct lttng_event_exclusion *exclusion,
+		struct lttng_event_target *target);
 struct ltt_ust_channel *trace_ust_find_channel_by_name(struct lttng_ht *ht,
 		char *name);
 struct agent *trace_ust_find_agent(struct ltt_ust_session *session,
@@ -169,7 +170,8 @@ struct ltt_ust_channel *trace_ust_create_channel(struct lttng_channel *attr);
 struct ltt_ust_event *trace_ust_create_event(struct lttng_event *ev,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter,
-		struct lttng_event_exclusion *exclusion);
+		struct lttng_event_exclusion *exclusion,
+		struct lttng_event_target *target);
 struct ltt_ust_context *trace_ust_create_context(
 		struct lttng_event_context *ctx);
 int trace_ust_match_context(struct ltt_ust_context *uctx,
@@ -218,7 +220,8 @@ static inline
 struct ltt_ust_event *trace_ust_create_event(struct lttng_event *ev,
 		const char *filter_expression,
 		struct lttng_filter_bytecode *filter,
-		struct lttng_event_exclusion *exclusion)
+		struct lttng_event_exclusion *exclusion,
+		struct lttng_event_target *target)
 {
 	return NULL;
 }
@@ -250,7 +253,8 @@ int trace_ust_match_context(struct ltt_ust_context *uctx,
 }
 static inline struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
 		char *name, struct lttng_filter_bytecode *filter, int loglevel,
-		struct lttng_event_exclusion *exclusion)
+		struct lttng_event_exclusion *exclusion,
+		struct lttng_event_target *target)
 {
 	return NULL;
 }

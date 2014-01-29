@@ -169,7 +169,8 @@ error:
  */
 struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
 		char *name, struct lttng_filter_bytecode *filter, int loglevel,
-		struct lttng_event_exclusion *exclusion)
+		struct lttng_event_exclusion *exclusion,
+		struct lttng_event_target *target)
 {
 	struct lttng_ht_node_str *node;
 	struct lttng_ht_iter iter;
@@ -368,7 +369,8 @@ error:
 struct ltt_ust_event *trace_ust_create_event(struct lttng_event *ev,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter,
-		struct lttng_event_exclusion *exclusion)
+		struct lttng_event_exclusion *exclusion,
+		struct lttng_event_target *target)
 {
 	struct ltt_ust_event *lue;
 
