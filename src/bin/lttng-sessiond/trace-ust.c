@@ -359,12 +359,23 @@ struct ltt_ust_event *trace_ust_create_event(struct lttng_event *ev,
 	switch (ev->type) {
 	case LTTNG_EVENT_PROBE:
 		lue->attr.instrumentation = LTTNG_UST_PROBE;
+		lue->attr.u.probe.addr = ev->attr.probe.addr;
+		lue->attr.u.probe.offset = ev->attr.probe.offset;
+		strncpy(lue->attr.u.probe.symbol_name,
+				ev->attr.probe.symbol_name, LTTNG_UST_SYM_NAME_LEN);
+		lue->attr.u.probe.symbol_name[LTTNG_UST_SYM_NAME_LEN - 1] = '\0';
+		/* Same layout. */
+		lue->target = target;
 		break;
 	case LTTNG_EVENT_FUNCTION:
 		lue->attr.instrumentation = LTTNG_UST_FUNCTION;
-		break;
-	case LTTNG_EVENT_FUNCTION_ENTRY:
-		lue->attr.instrumentation = LTTNG_UST_FUNCTION;
+		lue->attr.u.probe.addr = ev->attr.probe.addr;
+		lue->attr.u.probe.offset = ev->attr.probe.offset;
+		strncpy(lue->attr.u.probe.symbol_name,
+				ev->attr.probe.symbol_name, LTTNG_UST_SYM_NAME_LEN);
+		lue->attr.u.probe.symbol_name[LTTNG_UST_SYM_NAME_LEN - 1] = '\0';
+		/* Same layout. */
+		lue->target = target;
 		break;
 	case LTTNG_EVENT_TRACEPOINT:
 		lue->attr.instrumentation = LTTNG_UST_TRACEPOINT;
@@ -582,6 +593,7 @@ void trace_ust_destroy_event(struct ltt_ust_event *event)
 	free(event->filter_expression);
 	free(event->filter);
 	free(event->exclusion);
+	free(event->target);
 	free(event);
 }
 
