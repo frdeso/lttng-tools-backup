@@ -52,6 +52,7 @@ struct ltt_ust_event {
 	char *filter_expression;
 	struct lttng_ust_filter_bytecode *filter;
 	struct lttng_event_exclusion *exclusion;
+	struct lttng_event_target *target;
 };
 
 /* UST channel */
