@@ -35,6 +35,7 @@ struct ltt_ust_ht_key {
 	const struct lttng_filter_bytecode *filter;
 	enum lttng_ust_loglevel_type loglevel;
 	const struct lttng_event_exclusion *exclusion;
+	const struct lttng_event_target *target;
 };
 
 /* Context hash table nodes */

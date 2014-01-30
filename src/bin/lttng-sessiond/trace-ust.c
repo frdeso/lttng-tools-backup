@@ -75,7 +75,7 @@ int trace_ust_ht_match_event(struct cds_lfht_node *node, const void *_key)
 	event = caa_container_of(node, struct ltt_ust_event, node.node);
 	key = _key;
 
-	/* Match the 4 elements of the key: name, filter, loglevel, exclusions. */
+	/* Match the 5 elements of the key: name, filter, loglevel, exclusions, target. */
 
 	/* Event name */
 	if (strncmp(event->attr.name, key->name, sizeof(event->attr.name)) != 0) {
@@ -121,6 +121,20 @@ int trace_ust_ht_match_event(struct cds_lfht_node *node, const void *_key)
 		if (event->exclusion->count != key->exclusion->count ||
 				memcmp(event->exclusion->names, key->exclusion->names,
 					event->exclusion->count * LTTNG_SYMBOL_NAME_LEN) != 0) {
+			goto no_match;
+		}
+	}
+
+	/* If only one of the target is NULL, fail. */
+	if ((key->target && !event->target) || (!key->target && event->target)) {
+		goto no_match;
+	}
+
+	if (key->target && event->target) {
+		/* Both target exist; check path_len followed by path. */
+		if (event->target->path_len != key->target->path_len ||
+				memcmp(event->target->path, key->target->path,
+					event->target->path_len) != 0) {
 			goto no_match;
 		}
 	}
@@ -183,6 +197,7 @@ struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
 	key.filter = filter;
 	key.loglevel = loglevel;
 	key.exclusion = exclusion;
+	key.target = target;
 
 	cds_lfht_lookup(ht->ht, ht->hash_fct((void *) name, lttng_ht_seed),
 			trace_ust_ht_match_event, &key, &iter.iter);
