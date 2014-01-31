@@ -39,7 +39,7 @@
 #define RANDOM_STRING_LEN	11
 
 /* Number of TAP tests in this file */
-#define NUM_TESTS 10
+#define NUM_TESTS 12
 
 /* For error.h */
 int lttng_opt_quiet = 1;
@@ -175,6 +175,41 @@ static void test_create_ust_event_exclusion(void)
 	trace_ust_destroy_event(event);
 }
 
+static void test_create_ust_event_target(void)
+{
+	struct ltt_ust_event *event;
+	struct lttng_event ev;
+	struct lttng_event_target *target;
+	char path[] = PATH1;
+
+	memset(&ev, 0, sizeof(ev));
+
+	strncpy(ev.name, get_random_string(), LTTNG_SYMBOL_NAME_LEN);
+	ev.type = LTTNG_EVENT_FUNCTION;
+	ev.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
+
+	/* set up an instrument target */
+	target = zmalloc(sizeof(*target) + sizeof(path));
+	target->path_len = sizeof(path) - 1;
+	strncpy((char *)(target->path), path, target->path_len);
+	target->path[target->path_len] = '\0';
+
+	event = trace_ust_create_event(&ev, NULL, NULL, NULL, target);
+
+	ok(event != NULL, "Create UST event with instrument target");
+
+	ok(event->enabled == 0 &&
+	   event->attr.instrumentation == LTTNG_UST_FUNCTION &&
+	   strcmp(event->attr.name, ev.name) == 0 &&
+	   event->exclusion == NULL &&
+	   event->target != NULL &&
+	   event->target->path_len == sizeof(path) - 1 &&
+	   strcmp((char *)(event->target->path), (char *)(target->path)) == 0 &&
+	   event->attr.name[LTTNG_UST_SYM_NAME_LEN - 1] == '\0',
+	   "Validate UST event and instrument target");
+
+	trace_ust_destroy_event(event);
+}
 
 static void test_create_ust_context(void)
 {
@@ -202,6 +237,7 @@ int main(int argc, char **argv)
 	test_create_ust_event();
 	test_create_ust_context();
 	test_create_ust_event_exclusion();
+	test_create_ust_event_target();
 
 	return exit_status();
 }
