@@ -51,6 +51,7 @@ struct ust_app_ht_key {
 	const struct lttng_ust_filter_bytecode *filter;
 	enum lttng_ust_loglevel_type loglevel;
 	const struct lttng_ust_event_exclusion *exclusion;
+	const struct lttng_ust_event_target *target;
 };
 
 /*
