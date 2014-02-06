@@ -104,7 +104,7 @@ static int ht_match_ust_app_event(struct cds_lfht_node *node, const void *_key)
 	event = caa_container_of(node, struct ust_app_event, node.node);
 	key = _key;
 
-	/* Match the 4 elements of the key: name, filter, loglevel, exclusions */
+	/* Match the 5 elements of the key: name, filter, loglevel, exclusions, target */
 
 	/* Event name */
 	if (strncmp(event->attr.name, key->name, sizeof(event->attr.name)) != 0) {
@@ -154,6 +154,19 @@ static int ht_match_ust_app_event(struct cds_lfht_node *node, const void *_key)
 		}
 	}
 
+	/* One of the instrument target is NULL, fail. */
+	if ((key->target && !event->target) || (!key->target && event->target)) {
+		goto no_match;
+	}
+
+	if (key->target && event->target) {
+		/* Both target exists, check path_len followed by the path. */
+		if (event->target->path_len != key->target->path_len ||
+				memcmp(event->target->path, key->target->path,
+					event->target->path_len) != 0) {
+			goto no_match;
+		}
+	}
 
 	/* Match. */
 	return 1;
@@ -182,6 +195,7 @@ static void add_unique_ust_app_event(struct ust_app_channel *ua_chan,
 	key.filter = event->filter;
 	key.loglevel = event->attr.loglevel;
 	key.exclusion = event->exclusion;
+	key.target = event->target;
 
 	node_ptr = cds_lfht_add_unique(ht->ht,
 			ht->hash_fct(event->node.key, lttng_ht_seed),
@@ -1045,7 +1059,8 @@ error:
  */
 static struct ust_app_event *find_ust_app_event(struct lttng_ht *ht,
 		char *name, struct lttng_ust_filter_bytecode *filter, int loglevel,
-		const struct lttng_event_exclusion *exclusion)
+		const struct lttng_event_exclusion *exclusion,
+		const struct lttng_event_target *target)
 {
 	struct lttng_ht_iter iter;
 	struct lttng_ht_node_str *node;
@@ -1060,7 +1075,9 @@ static struct ust_app_event *find_ust_app_event(struct lttng_ht *ht,
 	key.filter = filter;
 	key.loglevel = loglevel;
 	/* lttng_event_exclusion and lttng_ust_event_exclusion structures are similar */
-	key.exclusion = (struct lttng_ust_event_exclusion *)exclusion;
+	key.exclusion = (struct lttng_ust_event_exclusion *) exclusion;
+	/* lttng_event_target and lttng_ust_event_target structures are similar */
+	key.target = (struct lttng_ust_event_target *) target;
 
 	/* Lookup using the event name as hash and a custom match fct. */
 	cds_lfht_lookup(ht->ht, ht->hash_fct((void *) name, lttng_ht_seed),
@@ -1573,7 +1590,8 @@ static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 	/* Copy all events from ltt ust channel to ust app channel */
 	cds_lfht_for_each_entry(uchan->events->ht, &iter.iter, uevent, node.node) {
 		ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-				uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+				uevent->filter, uevent->attr.loglevel, uevent->exclusion,
+				uevent->target);
 		if (ua_event == NULL) {
 			DBG2("UST event %s not found on shadow copy channel",
 					uevent->attr.name);
@@ -2688,7 +2706,8 @@ int create_ust_app_event(struct ust_app_session *ua_sess,
 
 	/* Get event node */
 	ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-			uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+			uevent->filter, uevent->attr.loglevel, uevent->exclusion,
+			uevent->target);
 	if (ua_event != NULL) {
 		ret = -EEXIST;
 		goto end;
@@ -3662,7 +3681,8 @@ int ust_app_enable_event_glb(struct ltt_ust_session *usess,
 
 		/* Get event node */
 		ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-				uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+				uevent->filter, uevent->attr.loglevel, uevent->exclusion,
+				uevent->target);
 		if (ua_event == NULL) {
 			DBG3("UST app enable event %s not found for app PID %d."
 					"Skipping app", uevent->attr.name, app->pid);
@@ -4371,7 +4391,8 @@ int ust_app_enable_event_pid(struct ltt_ust_session *usess,
 	ua_chan = caa_container_of(ua_chan_node, struct ust_app_channel, node);
 
 	ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-			uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+			uevent->filter, uevent->attr.loglevel, uevent->exclusion,
+			uevent->target);
 	if (ua_event == NULL) {
 		ret = create_ust_app_event(ua_sess, ua_chan, uevent, app);
 		if (ret < 0) {
