@@ -117,6 +117,7 @@ struct ust_app_event {
 	struct lttng_ht_node_str node;
 	struct lttng_ust_filter_bytecode *filter;
 	struct lttng_ust_event_exclusion *exclusion;
+	struct lttng_ust_event_target *target;
 };
 
 struct ust_app_stream {
