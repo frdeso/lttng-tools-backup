@@ -287,8 +287,9 @@ void delete_ust_app_event(int sock, struct ust_app_event *ua_event)
 	assert(ua_event);
 
 	free(ua_event->filter);
-	if (ua_event->exclusion != NULL)
-		free(ua_event->exclusion);
+	free(ua_event->exclusion);
+	free(ua_event->target);
+
 	if (ua_event->obj != NULL) {
 		ret = ustctl_release_object(sock, ua_event->obj);
 		if (ret < 0 && ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
@@ -1481,6 +1482,7 @@ static void shadow_copy_event(struct ust_app_event *ua_event,
 		struct ltt_ust_event *uevent)
 {
 	size_t exclusion_alloc_size;
+	size_t target_alloc_size;
 
 	strncpy(ua_event->name, uevent->attr.name, sizeof(ua_event->name));
 	ua_event->name[sizeof(ua_event->name) - 1] = '\0';
@@ -1506,6 +1508,18 @@ static void shadow_copy_event(struct ust_app_event *ua_event,
 		} else {
 			memcpy(ua_event->exclusion, uevent->exclusion,
 					exclusion_alloc_size);
+		}
+	}
+
+	/* Copy instrument target data */
+	if (uevent->target) {
+		target_alloc_size = sizeof(struct lttng_ust_event_target) +
+				uevent->target->path_len;
+		ua_event->target = zmalloc(target_alloc_size);
+		if (ua_event->target == NULL) {
+			PERROR("malloc");
+		} else {
+			memcpy(ua_event->target, uevent->target, target_alloc_size);
 		}
 	}
 }
