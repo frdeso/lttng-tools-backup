@@ -353,8 +353,25 @@ fi
 AM_CONDITIONAL([BUILD_JAVA_JUL], [test "x$build_java_jul" = "xyes"])
 AC_SUBST([java_jul_jar_path])
 
+# Option to build with dyninst
+# TODO: support custom prefix
+AC_ARG_WITH([dyninst],
+	AS_HELP_STRING([--with-dyninst],[Build with dyninst library [default=no]]),
+	[has_dyninst=$withval],
+	[has_dyninst=no])
+
+# TODO: check library and header
+AS_IF([test "x$has_dyninst" != "xno"], [
+	AC_DEFINE([HAVE_DYNINST], [1], [have dyninst library])
+	AC_DEFINE([HAVE_UST_DYNAMIC_INSTRUMENT], [1], [have ust dynamic instrument])
+	build_with_dyninst=yes
+])
+AM_CONDITIONAL([HAVE_DYNINST], [test "x$build_with_dyninst" = "xyes"])
+AM_CONDITIONAL([HAVE_UST_DYNAMIC_INSTRUMENT], [test "x$build_with_dyninst" = "xyes"])
+
 AC_SYS_LARGEFILE
 AC_PROG_CC
+AC_PROG_CXX
 LT_INIT
 AC_PROG_YACC
 AC_PROG_LEX

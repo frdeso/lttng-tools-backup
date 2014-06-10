@@ -21,7 +21,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#define INT32_MAX              (2147483647)
+#define INT32_MIN              (-2147483647-1)
 
+//#include <stdint.h>
 #include <lttng/handle.h>
 
 /*

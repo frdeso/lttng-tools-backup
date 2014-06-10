@@ -629,3 +629,7 @@ void ust_registry_session_destroy(struct ust_registry_session *reg)
 
 	free(reg->metadata);
 }
+int ust_registry_is_max_id(uint32_t id)
+{
+	return (id == UINT32_MAX) ? 1 : 0;
+}

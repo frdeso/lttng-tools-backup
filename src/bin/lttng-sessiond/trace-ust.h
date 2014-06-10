@@ -17,7 +17,6 @@
 
 #ifndef _LTT_TRACE_UST_H
 #define _LTT_TRACE_UST_H
-
 #include <config.h>
 #include <limits.h>
 #include <urcu/list.h>
@@ -122,10 +121,7 @@ struct ltt_ust_session {
  *
  * Return 0 if NOT else 1.
  */
-static inline int trace_ust_is_max_id(uint64_t id)
-{
-	return (id == UINT64_MAX) ? 1 : 0;
-}
+int trace_ust_is_max_id(uint64_t id);
 
 /*
  * Return next available channel id and increment the used counter. The

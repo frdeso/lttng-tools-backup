@@ -20,7 +20,6 @@
 
 #include <pthread.h>
 #include <stdint.h>
-
 #include <common/hashtable/hashtable.h>
 #include <common/compat/uuid.h>
 
@@ -144,10 +143,7 @@ struct ust_registry_event {
  *
  * Return 0 if NOT else 1.
  */
-static inline int ust_registry_is_max_id(uint32_t id)
-{
-	return (id == UINT32_MAX) ? 1 : 0;
-}
+int ust_registry_is_max_id(uint32_t id);
 
 /*
  * Return next available event id and increment the used counter. The
