@@ -65,10 +65,18 @@ UST_DATA_TRACE=$(top_builddir)/src/bin/lttng-sessiond/trace-ust.o \
 		   $(top_builddir)/src/common/health/libhealth.la \
 		   $(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la
 
+if HAVE_DYNINST
+UST_DATA_TRACE += $(top_builddir)/src/bin/lttng-sessiond/ust-instrument-dyninst.o
+endif
+
 test_ust_data_SOURCES = test_ust_data.c
 test_ust_data_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBRELAYD) $(LIBSESSIOND_COMM)\
 		      $(LIBHASHTABLE) -lrt -llttng-ust-ctl
 test_ust_data_LDADD += $(UST_DATA_TRACE)
+
+if HAVE_DYNINST
+test_ust_data_LDADD += -lstdc++ -ldyninstAPI
+endif
 endif
 
 # Kernel data structures unit test
