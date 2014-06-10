@@ -18,7 +18,9 @@
 #ifndef LTTNG_SESSIOND_JUL_H
 #define LTTNG_SESSIOND_JUL_H
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <inttypes.h>
 
 #include <common/hashtable/hashtable.h>

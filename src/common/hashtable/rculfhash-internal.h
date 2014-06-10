@@ -168,7 +168,7 @@ struct cds_lfht *__default_alloc_cds_lfht(
 {
 	struct cds_lfht *ht;
 
-	ht = calloc(1, cds_lfht_size);
+	ht = (struct cds_lfht *) calloc(1, cds_lfht_size);
 	assert(ht);
 
 	ht->mm = mm;

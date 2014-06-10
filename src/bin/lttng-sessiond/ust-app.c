@@ -38,6 +38,7 @@
 #include "ust-app.h"
 #include "ust-consumer.h"
 #include "ust-ctl.h"
+#include "ust-instrument.h"
 #include "utils.h"
 
 /* Next available channel key. Access under next_channel_key_lock. */
@@ -4888,6 +4889,59 @@ int ust_app_recv_notify(int sock)
 			goto error;
 		}
 
+		break;
+	}
+	case USTCTL_NOTIFY_CMD_INSTRUMENT:
+	{
+		enum lttng_ust_instrumentation instrumentation;
+		char name[LTTNG_UST_SYM_NAME_LEN], symbol[LTTNG_UST_SYM_NAME_LEN];
+		char object_path[PATH_MAX];
+		uint64_t addr, offset;
+		struct ust_app *app;
+		struct lttng_ust_instrument_tracepoint_attr tracepoint;
+
+		DBG2("UST app ustctl instrument probe received");
+
+		ret = ustctl_recv_instrument_probe(sock, object_path, name, &tracepoint,
+				&instrumentation, &addr, symbol, &offset);
+		if (ret < 0) {
+			if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+				ERR("UST app recv instrument failed with ret %d", ret);
+			} else {
+				DBG3("UST app recv instrument failed. Application died");
+			}
+			goto error;
+		}
+
+		rcu_read_lock();
+
+		app = find_app_by_notify_sock(sock);
+		if (app == NULL) {
+			DBG3("UST app instrument failed to find app sock %d", sock);
+			goto error;
+		}
+
+		if (!app->compatible) {
+			goto error;
+		}
+
+		rcu_read_unlock();
+
+		ret = ust_instrument_probe(app, object_path, name, &tracepoint,
+				instrumentation, addr, symbol, offset);
+
+		DBG3("UST app replying to instrument probe with pid %u, ret: %d",
+				app->pid, ret);
+
+		ret = ustctl_reply_instrument_probe(sock, ret);
+		if (ret < 0) {
+			if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+				ERR("UST app reply instrument failed with ret %d", ret);
+			} else {
+				DBG3("UST app reply instrument failed. Application died");
+			}
+			goto error;
+		}
 		break;
 	}
 	default:

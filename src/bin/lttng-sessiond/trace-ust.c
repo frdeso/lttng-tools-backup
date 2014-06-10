@@ -764,3 +764,8 @@ void trace_ust_destroy_session(struct ltt_ust_session *session)
 
 	free(session);
 }
+
+int trace_ust_is_max_id(uint64_t id)
+{
+	return (id == UINT64_MAX) ? 1 : 0;
+}
