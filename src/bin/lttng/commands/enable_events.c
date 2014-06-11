@@ -398,7 +398,7 @@ static int loglevel_jul_str_to_value(const char *inputstr)
 /*
  * Parse user-space probe options.
  */
-static int parse_ust_probe_opts(struct lttng_event *ev, char *target, char *opt)
+static int parse_ust_probe_opts(struct lttng_event *ev, char **target, char *opt)
 {
 	char *pos;
 	int ret;
@@ -417,7 +417,7 @@ static int parse_ust_probe_opts(struct lttng_event *ev, char *target, char *opt)
 	if (pos != NULL) {
 		/* Process relative path */
 		*pos = '\0';
-		target = utils_expand_path(opt);
+		*target = utils_expand_path(opt);
 		if (!target) {
 			ERR("Invalid instrument target: %s", opt);
 			goto error;
@@ -1002,7 +1002,7 @@ static int enable_events(char *session_name)
 			case LTTNG_EVENT_PROBE:
 				/* Free previously allocated path */
 				free(target_path);
-				ret = parse_ust_probe_opts(&ev, target_path, opt_probe);
+				ret = parse_ust_probe_opts(&ev, &target_path, opt_probe);
 				if (ret < 0) {
 					ERR("Unable to parse probe options");
 					ret = 0;
@@ -1012,7 +1012,7 @@ static int enable_events(char *session_name)
 			case LTTNG_EVENT_FUNCTION:
 				/* Free previously allocated path */
 				free(target_path);
-				ret = parse_ust_probe_opts(&ev, target_path, opt_function);
+				ret = parse_ust_probe_opts(&ev, &target_path, opt_function);
 				if (ret < 0) {
 					ERR("Unable to parse function probe options");
 					ret = 0;
