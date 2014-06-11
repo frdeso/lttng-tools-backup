@@ -916,14 +916,9 @@ static int enable_event(struct lttng_handle *handle,
 	 */
 	if (exclusion_count == 0 && filter_expression == NULL &&
 			(handle->domain.type != LTTNG_DOMAIN_JUL &&
-				handle->domain.type != LTTNG_DOMAIN_LOG4J)) {
+				handle->domain.type != LTTNG_DOMAIN_LOG4J) && 
+					target_path == NULL) {
 		goto ask_sessiond;
-	}
-
-	if (exclusion_count == 0 && filter_expression == NULL
-			&& target_path == NULL) {
-		ret = lttng_ctl_ask_sessiond(&lsm, NULL);
-		return ret;
 	}
 
 	/*
@@ -962,7 +957,8 @@ static int enable_event(struct lttng_handle *handle,
 	}
 
 	if (target_path != NULL) {
-		lsm.u.enable.target_len = strnlen(target_path, PATH_MAX);
+		/* Add one to take into account the ending null char. */
+		lsm.u.enable.target_len = strnlen(target_path, PATH_MAX) + 1;
 	}
 
 	varlen_data = zmalloc(lsm.u.enable.bytecode_len
