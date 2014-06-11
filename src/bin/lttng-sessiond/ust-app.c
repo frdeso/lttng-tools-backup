@@ -985,6 +985,28 @@ error:
 }
 
 /*
+ * Allocate a instrument target and copy the given original one.
+ *
+ * Return allocated instrument target or NULL on error.
+ */
+static struct lttng_ust_event_target *alloc_copy_ust_app_target(
+		struct lttng_ust_event_target *orig_t)
+{
+	struct lttng_ust_event_target *target = NULL;
+
+	target = zmalloc(sizeof(*target) + orig_t->path_len);
+	if (!target) {
+		PERROR("zmalloc alloc ust app instrument target");
+		goto error;
+	}
+
+	memcpy(target, orig_t, sizeof(*target) + orig_t->path_len);
+
+error:
+	return target;
+}
+
+/*
  * Allocate a filter and copy the given original filter.
  *
  * Return allocated filter or NULL on error.

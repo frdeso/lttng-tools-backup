@@ -116,8 +116,19 @@ struct lttng_ust_event_probe_attr {
 
 	char padding[LTTNG_UST_EVENT_PROBE_PADDING];
 };
+/*
+ * Instrument target
+ */
+#define LTTNG_UST_TARGET_PADDING	32
+struct lttng_ust_event_target {
+	uint32_t path_len;
 
-#define LTTNG_UST_EVENT_PADDING1	16
+	char padding[LTTNG_UST_TARGET_PADDING];
+
+	char path[0];
+} LTTNG_PACKED;
+
+#define LTTNG_UST_EVENT_PADDING1	(16 - sizeof(struct lttng_ust_event_target *))
 #define LTTNG_UST_EVENT_PADDING2	(LTTNG_UST_SYM_NAME_LEN + 32)
 struct lttng_ust_event {
 	enum lttng_ust_instrumentation instrumentation;
@@ -125,6 +136,7 @@ struct lttng_ust_event {
 
 	enum lttng_ust_loglevel_type loglevel_type;
 	int loglevel;	/* value, -1: all */
+	struct lttng_ust_event_target *target;
 	char padding[LTTNG_UST_EVENT_PADDING1];
 
 	/* Per instrumentation type configuration */
@@ -308,6 +320,7 @@ struct lttng_ust_event_exclusion {
 
 /* Event FD commands */
 #define LTTNG_UST_FILTER			_UST_CMD(0xA0)
+#define LTTNG_UST_TARGET			_UST_CMD(0xA2)
 
 #define LTTNG_UST_ROOT_HANDLE	0
 
@@ -342,5 +355,8 @@ int lttng_ust_objd_unref(int id, int is_owner);
 void lttng_ust_abi_exit(void);
 void lttng_ust_events_exit(void);
 void lttng_ust_objd_table_owner_cleanup(void *owner);
+
+/* Function to trigger dynamic instrumented tracepoint */
+#define LTTNG_DYNAMIC_TRACEPOINT tracepoint_of
 
 #endif /* _LTTNG_UST_ABI_H */
