@@ -201,7 +201,7 @@ struct lttng_event_function_attr {
  *
  * The structures should be initialized to zero before use.
  */
-#define LTTNG_EVENT_PADDING1               14
+#define LTTNG_EVENT_PADDING1               (14 - sizeof(struct lttng_event_target_attr *))
 #define LTTNG_EVENT_PADDING2               LTTNG_SYMBOL_NAME_LEN + 32
 struct lttng_event {
 	enum lttng_event_type type;
@@ -214,7 +214,7 @@ struct lttng_event {
 	pid_t pid;
 	unsigned char filter;	/* filter enabled ? */
 	unsigned char exclusion; /* exclusions added ? */
-
+	struct lttng_event_target_attr *target; /* No object path: NULL */
 	char padding[LTTNG_EVENT_PADDING1];
 
 	/* Per event type configuration */
