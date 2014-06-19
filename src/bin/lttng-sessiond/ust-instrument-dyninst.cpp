@@ -183,9 +183,25 @@ int ust_instrument_probe(struct ust_app *app,
 		}
 		break;
 	case LTTNG_UST_PROBE:
-		ERR("Not implemented yet");
-		/* Fall through */
+		object->findFunction(symbol, functions, false);
 
+		if (functions.size() == 0) {
+			ERR("No functions %s found in app process", symbol);
+			goto error;
+		}
+		if (functions.size() > 1) {
+			ERR("Multiple instances of %s found in app process", symbol);
+			goto error;
+		}
+		/* Instrument the entry of the function */
+		points = functions[0]->findPoint(BPatch_entry);
+		ret = instrument_process(process, image, *points,
+				tracepoint->u.probe);
+		if (ret) {
+			goto error;
+		}
+
+		break;
 	default:
 		goto error;
 		break;
