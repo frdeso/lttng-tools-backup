@@ -83,6 +83,7 @@ static struct cmd_struct commands[] =  {
 	{ "snapshot", cmd_snapshot},
 	{ "save", cmd_save},
 	{ "load", cmd_load},
+	{ "trace", cmd_trace},
 	{ "enable-consumer", cmd_enable_consumer}, /* OBSOLETE */
 	{ "disable-consumer", cmd_disable_consumer}, /* OBSOLETE */
 	{ NULL, NULL}	/* Array closure */
@@ -126,6 +127,7 @@ static void usage(FILE *ofp)
 	fprintf(ofp, "    view              Start trace viewer\n");
 	fprintf(ofp, "    save              Save session configuration\n");
 	fprintf(ofp, "    load              Load session configuration\n");
+	fprintf(ofp, "    trace             Instant-tracing\n");
 	fprintf(ofp, "\n");
 	fprintf(ofp, "Each command also has its own -h, --help option.\n");
 	fprintf(ofp, "\n");
