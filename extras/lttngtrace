@@ -1,0 +1,120 @@
+#!/bin/sh
+exit_gracefully()
+# run if user hits control-c
+{
+	lttng stop
+	lttng destroy -a
+	exit
+}
+
+# trap keyboard interrupt (control-c)
+trap exit_gracefully INT
+
+EVENT_NAME=
+SYMBOL=
+TARGET=
+FUNCTION=false
+PROBE=false
+PROG=""
+EVENTS_LIST=""
+NB_EVENT=0
+usage()
+{
+cat << EOF
+usage: $0 options
+
+OPTIONS:
+   -h      			Show this message
+   -p <symbol name> Add probe at this symbol
+   -f <symbol name> Add probes at the entry and exit of this symbol
+   -n      			name of the probe
+
+EXAMPLE:
+	# lttng trace -f symbol_foo -n tp_name program --args
+
+EOF
+}
+# We have to iterate through events and create a list
+# because we don't know the target yet since it's the
+# last argument.
+while [ "$1" != "" ]; do
+	if test "$1" = "-p"; then
+		EVENTS_LIST=$EVENTS_LIST' '$1
+		shift
+		EVENTS_LIST=$EVENTS_LIST' '$1
+		shift
+		EVENTS_LIST=$EVENTS_LIST' '$1
+		shift
+		EVENTS_LIST=$EVENTS_LIST' '$1
+		shift
+		NB_EVENT=$((NB_EVENT+1))
+	elif test "$1" = "-f"; then
+		EVENTS_LIST=$EVENTS_LIST' '$1
+		shift
+		EVENTS_LIST=$EVENTS_LIST' '$1
+		shift
+		EVENTS_LIST=$EVENTS_LIST' '$1
+		shift
+		EVENTS_LIST=$EVENTS_LIST' '$1
+		shift
+		NB_EVENT=$((NB_EVENT+1))
+	else
+		PROG=$@
+		break
+	fi
+
+done
+PROG_NAME=$(echo $PROG | cut -d' ' -f1)
+TARGET=$(echo $PROG_NAME | xargs which )
+PROG=$TARGET$(echo $PROG | awk -F "$PROG_NAME" '{print $2}')
+
+# We check if the sessiond is running
+pgrep lttng-sessiond >/dev/null
+if test $? != 0; then
+	echo "Starting lttng-sessiond as your current user, start manually if \
+it fails)"
+	lttng-sessiond -d
+	if test $? != 0; then
+		exit 1
+	fi
+fi
+
+# We check if the relayd is running
+pgrep lttng-relayd >/dev/null
+if test $? != 0; then
+	echo "Starting lttng-relayd as your current user, start manually if \
+it fails"
+	lttng-relayd -d
+	if test $? != 0; then
+		exit 1
+	fi
+fi
+
+# Create the live session
+lttng create --live 1000000 -U net://localhost > /dev/null
+
+# Enable all userspace event
+lttng enable-event lttng_ust_tracef:event -u > /dev/null
+
+# Iterate through the event list to enable every events
+for i in `seq 1 $NB_EVENT`
+do
+	PROBE_TYPE=$(echo $EVENTS_LIST | cut -d' ' -f1)
+	SYMBOL=$(echo $EVENTS_LIST | cut -d' ' -f2)
+	EVENT_NAME=$(echo $EVENTS_LIST | cut -d' ' -f4)
+
+	if test "$PROBE_TYPE" = "-f"; then
+		lttng enable-event 'dyn-tp:'$EVENT_NAME  --function $TARGET'@'$SYMBOL -u > /dev/null
+	else
+		lttng enable-event 'dyn-tp:'$EVENT_NAME  --probe $TARGET'@'$SYMBOL -u > /dev/null
+	fi
+
+	# Remove the newly added event for the event list
+	EVENTS_LIST=$(echo $EVENTS_LIST | awk -F "-n $EVENT_NAME " '{$1=""; print $0}' )
+done
+
+lttng add-context -u -t vpid > /dev/null
+lttng start > /dev/null
+
+LD_PRELOAD=/usr/local/lib/liblttng-ust.so $PROG > /dev/null 2>&1 &
+lttng view

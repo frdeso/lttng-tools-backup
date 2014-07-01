@@ -29,5 +29,12 @@
  */
 int cmd_trace(int argc, const char **argv)
 {
+	char lttng_trace_path[] = "/usr/local/bin/lttngtrace";
+	char *args[argc+1];
+	args[0] = "/bin/sh";
+	args[1] = lttng_trace_path;
+	int i;
+	memcpy(&(args[2]), &argv[1], argc*(sizeof(char*)));
+	execv(args[0], args);
 	return CMD_SUCCESS;
 }
