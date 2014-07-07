@@ -70,6 +70,90 @@ int instrument_process(BPatch_process *process,
 	return 0;
 }
 
+int instrument_process_tracef(BPatch_process *process,
+		BPatch_image *image,
+		std::vector<BPatch_point *> &points,
+		BPatch_function *function)
+{
+	std::vector<BPatch_function *> probes;
+	image->findFunction("_lttng_ust_tracef", probes);
+
+	std::vector<BPatch_snippet *> args, tmp_args;
+	std::string fmt("params: ");
+	vector<BPatch_localVar *> *params = function->getParams();
+	if(params->size() == 0)
+	{
+	    fmt=std::string("NO PARAMETER FOUND");
+	}
+	else
+	{
+
+	    for(unsigned int i = 0; i < params->size(); ++i )
+	    {
+		    tmp_args.push_back(new BPatch_constExpr((*params)[i]->getName()));
+		    //Push the type of the next argument
+		    switch((*params)[i]->getType()->getDataClass())
+		    {
+			    case BPatch_dataScalar:
+			    {
+				    string typeName = (*params)[i]->getType()->getName();
+				    if(typeName == "char")
+				    {
+				    	    fmt.append("char %s = \'%c\'");
+					    tmp_args.push_back(new BPatch_paramExpr(i));
+				    }
+				    else if (typeName == "short int")
+				    {
+				    	    fmt.append("short int %s = %d");
+					    tmp_args.push_back(new BPatch_paramExpr(i));
+				    }
+				    else
+				    {
+				    	    fmt.append("int %s = %d");
+					    tmp_args.push_back(new BPatch_paramExpr(i));
+				    }
+				    break;
+			    }
+			    case BPatch_dataPointer:
+			    {
+				    string typeName = (*params)[i]->getType()->getConstituentType()->getName();
+				    if(typeName == "char")
+				    {
+				    	    fmt.append("char *%s = \"%s\"");
+					    tmp_args.push_back(new BPatch_paramExpr(i));
+				    }
+				    else
+				    {
+				    	    fmt.append("int *%s = %p");
+					    tmp_args.push_back(new BPatch_paramExpr(i));
+				    }
+				    break;
+			    }
+			    default:
+			    {
+				    cout<<"Dataclass unsupported"<<endl;
+				    fmt.append("%d");
+				    args.push_back(new BPatch_constExpr(99999999));
+				    break;
+			    }
+		    }
+		    fmt.append(", ");
+	    }
+	}
+	args.push_back(new BPatch_constExpr(fmt.c_str()));
+	args.reserve(args.size()+tmp_args.size());
+	args.insert(args.end(), tmp_args.begin(), tmp_args.end());
+
+	cout<<"****"<<fmt<<": "<<args.size()<<endl;
+	BPatch_funcCallExpr call_tracef(*probes[0], args);
+	for (int i = 0; i < points.size(); i++) {
+		if (!process->insertSnippet(call_tracef, *points[i])) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
 /*
  * Check if user set DYNINSTAPI_RT_LIB environment variable.
  * If not, guess the path of dyninst RT lib form the path of libdyninstAPI.so.
@@ -169,8 +253,9 @@ int ust_instrument_probe(struct ust_app *app,
 		}
 
 		points = functions[0]->findPoint(BPatch_entry);
-		ret = instrument_process(process, image, *points,
-				tracepoint->u.function.entry);
+		ret = instrument_process_tracef(process, image, *points,
+				functions[0]);
+		//ret = instrument_function_entry(process, image, functions[0]);
 		if (ret) {
 			goto error;
 		}

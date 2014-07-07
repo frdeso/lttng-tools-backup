@@ -72,7 +72,7 @@ PROG=$TARGET$(echo $PROG | awk -F "$PROG_NAME" '{print $2}')
 pgrep lttng-sessiond >/dev/null
 if test $? != 0; then
 	echo "Starting lttng-sessiond as your current user, start manually if \
-it fails)"
+it fails"
 	lttng-sessiond -d
 	if test $? != 0; then
 		exit 1
@@ -115,6 +115,9 @@ done
 
 lttng add-context -u -t vpid > /dev/null
 lttng start > /dev/null
-
+export LTTNG_UST_DEBUG=1
+#export LTTNG_UST_REGISTER_TIMEOUT=-1
 LD_PRELOAD=/usr/local/lib/liblttng-ust.so $PROG > /dev/null 2>&1 &
+#LD_PRELOAD=/usr/local/lib/liblttng-ust.so $PROG  &
 lttng view
+
