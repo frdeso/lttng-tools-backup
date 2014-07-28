@@ -1279,6 +1279,24 @@ error:
 	health_code_update();
 	return ret;
 }
+/*
+ * Instrument the process and send a tracepoint activation request
+ * to the app.
+ */
+static
+int instrument_app(struct ust_app_event *ua_event, struct ust_app *app)
+{
+	int ret;
+	struct lttng_ust_event event = ua_event->attr;
+	DBG("Instrumenting app");
+	ust_instrument_probe_v2(app, event.name,
+			event.instrumentation, event.u.probe.addr,
+			event.u.probe.symbol_name, event.u.probe.offset);
+	ret = ustctl_activate_tp(app->sock, ua_event->obj);
+	if(ret != 0)
+		return ret;
+	return 0;
+}
 
 /*
  * Disable the specified event on to UST tracer for the UST session.
@@ -1529,6 +1547,7 @@ int create_ust_event(struct ust_app *app, struct ust_app_session *ua_sess,
 
 	/* Set instrument target for the event */
 	if (ua_event->target) {
+		ret = instrument_app(ua_event, app);
 		ret = set_ust_event_target(ua_event, app);
 		if (ret < 0) {
 			goto error;

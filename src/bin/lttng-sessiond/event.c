@@ -761,7 +761,7 @@ int event_jul_disable(struct ltt_ust_session *usess, char *event_name)
 	 * filter is the one handling the loglevel for JUL.
 	 */
 	uevent = trace_ust_find_event(uchan->events, ust_event_name,
-			jevent->filter, 0, NULL);
+			jevent->filter, 0, NULL, NULL);
 	/* If the JUL event exists, it must be available on the UST side. */
 	assert(uevent);
 

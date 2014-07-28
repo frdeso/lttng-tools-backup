@@ -34,6 +34,12 @@ int ust_instrument_probe(struct ust_app* app,
 		const char *symbol,
 		uint64_t offset);
 
+int ust_instrument_probe_v2(struct ust_app *app,
+		const char *name,
+		enum lttng_ust_instrumentation instrumentation,
+		uint64_t addr,
+		const char *symbol,
+		uint64_t offset);
 #else /* HAVE_UST_DYNAMIC_INSTRUMENT && HAVE_LIBLTTNG_UST_CTL */
 
 static
