@@ -1,6 +1,6 @@
 #!/bin/sh
-exit_gracefully()
 # run if user hits control-c
+exit_gracefully()
 {
 	lttng stop
 	lttng destroy -a
@@ -9,7 +9,7 @@ exit_gracefully()
 
 # trap keyboard interrupt (control-c)
 trap exit_gracefully INT
-
+export DYNINSTAPI_RT_LIB=/usr/lib/libdyninstAPI_RT.so
 EVENT_NAME=
 SYMBOL=
 TARGET=
@@ -58,6 +58,11 @@ while [ "$1" != "" ]; do
 		EVENTS_LIST=$EVENTS_LIST' '$1
 		shift
 		NB_EVENT=$((NB_EVENT+1))
+	elif test "$1" = "-l"; then
+	    	shift
+	    	export DYNINSTAPI_RT_LIB=/usr/lib/libdyninstAPI_RT.so
+	    	/home/frdeso/projets/dyninst-sandbox/list-functions/mutator $(echo $@ | xargs which )
+		exit
 	else
 		PROG=$@
 		break
@@ -95,6 +100,7 @@ lttng create --live 1000000 -U net://localhost > /dev/null
 
 # Enable all userspace event
 lttng enable-event lttng_ust_tracef:event -u > /dev/null
+#lttng enable-event -a -u > /dev/null
 
 # Iterate through the event list to enable every events
 for i in `seq 1 $NB_EVENT`
@@ -115,9 +121,11 @@ done
 
 lttng add-context -u -t vpid > /dev/null
 lttng start > /dev/null
+sleep 1
 export LTTNG_UST_DEBUG=1
-#export LTTNG_UST_REGISTER_TIMEOUT=-1
+export LTTNG_UST_REGISTER_TIMEOUT=-1
 LD_PRELOAD=/usr/local/lib/liblttng-ust.so $PROG > /dev/null 2>&1 &
+#
 #LD_PRELOAD=/usr/local/lib/liblttng-ust.so $PROG  &
-lttng view
+lttng view 
 

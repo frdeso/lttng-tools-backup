@@ -766,7 +766,7 @@ int event_agent_disable(struct ltt_ust_session *usess, struct agent *agt,
 	 * filter is the one handling the loglevel for agent.
 	 */
 	uevent = trace_ust_find_event(uchan->events, ust_event_name,
-			aevent->filter, 0, NULL);
+			aevent->filter, 0, NULL, NULL);
 	/* If the agent event exists, it must be available on the UST side. */
 	assert(uevent);
 
