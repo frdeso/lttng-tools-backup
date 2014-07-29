@@ -21,7 +21,7 @@
 #include <BPatch_point.h>
 #define __STDC_LIMIT_MACROS
 
-#define MAX_STR_LEN 40
+#define MAX_STR_LEN 30
 
 extern "C" {
 #include <link.h>
@@ -66,135 +66,6 @@ void add_char_event_field( struct lttng_event_di_field *field, char *name)
 }
 namespace {
 
-BPatch_object *find_match_object(BPatch_image *image, const char *path)
-{
-	std::vector<BPatch_object *> objects;
-	image->getObjects(objects);
-	for (int i = 0; i < objects.size(); i++) {
-		if (objects[i]->pathName() == path) {
-			return objects[i];
-		}
-	}
-	return NULL;
-}
-
-int instrument_process(BPatch_process *process,
-		BPatch_image *image,
-		std::vector<BPatch_point *> &points,
-		struct tracepoint *tracepoint)
-{
-	std::vector<BPatch_function *> probes;
-
-	image->findFunction(__ust_stringify(LTTNG_DYNAMIC_TRACEPOINT), probes);
-	if (probes.size() == 0) {
-		ERR("Probe callback function not found in app process");
-		return -1;
-	}
-	if (probes.size() > 1) {
-		ERR("Multiple instances of probe callback function found in app process");
-		return -1;
-	}
-
-	std::vector<BPatch_snippet *> args;
-	BPatch_constExpr tracepoint_ptr(tracepoint);
-	args.push_back(&tracepoint_ptr);
-	BPatch_funcCallExpr call_probe(*probes[0], args);
-
-	for (int i = 0; i < points.size(); i++) {
-		if (!process->insertSnippet(call_probe, *points[i])) {
-			return -1;
-		}
-	}
-	return 0;
-}
-
-int instrument_process_tracef(BPatch_process *process,
-		BPatch_image *image,
-		std::vector<BPatch_point *> &points,
-		BPatch_function *function)
-{
-	std::vector<BPatch_function *> probes;
-	image->findFunction("_lttng_ust_tracef", probes);
-	if(probes.size() == 0)
-	{
-		DBG("********tracef function not found");
-	}
-	std::vector<BPatch_snippet *> args, tmp_args;
-	std::string fmt("params: ");
-	vector<BPatch_localVar *> *params = function->getParams();
-	if(params->size() == 0)
-	{
-	    DBG("*******No parameter found");
-	    fmt=std::string("NO PARAMETER FOUND");
-	}
-	else
-	{
-
-	    for(unsigned int i = 0; i < params->size(); ++i )
-	    {
-		    tmp_args.push_back(new BPatch_constExpr((*params)[i]->getName()));
-		    //Push the type of the next argument
-		    switch((*params)[i]->getType()->getDataClass())
-		    {
-			    case BPatch_dataScalar:
-			    {
-				    string typeName = (*params)[i]->getType()->getName();
-				    if(typeName == "char")
-				    {
-				    	    fmt.append("char %s = \'%c\'");
-					    tmp_args.push_back(new BPatch_paramExpr(i));
-				    }
-				    else if (typeName == "short int")
-				    {
-				    	    fmt.append("short int %s = %d");
-					    tmp_args.push_back(new BPatch_paramExpr(i));
-				    }
-				    else
-				    {
-				    	    fmt.append("int %s = %d");
-					    tmp_args.push_back(new BPatch_paramExpr(i));
-				    }
-				    break;
-			    }
-			    case BPatch_dataPointer:
-			    {
-				    string typeName = (*params)[i]->getType()->getConstituentType()->getName();
-				    if(typeName == "char")
-				    {
-				    	    fmt.append("char *%s = \"%s\"");
-					    tmp_args.push_back(new BPatch_paramExpr(i));
-				    }
-				    else
-				    {
-				    	    fmt.append("int *%s = %p");
-					    tmp_args.push_back(new BPatch_paramExpr(i));
-				    }
-				    break;
-			    }
-			    default:
-			    {
-				    cout<<"Dataclass unsupported"<<endl;
-				    fmt.append("%d");
-				    args.push_back(new BPatch_constExpr(99999999));
-				    break;
-			    }
-		    }
-		    fmt.append(", ");
-	    }
-	}
-	args.push_back(new BPatch_constExpr(fmt.c_str()));
-	args.reserve(args.size()+tmp_args.size());
-	args.insert(args.end(), tmp_args.begin(), tmp_args.end());
-
-	cout<<"****"<<fmt<<": "<<args.size()<<endl;
-	BPatch_funcCallExpr call_tracef(*probes[0], args);
-	for (int i = 0; i < points.size(); i++) {
-		if (!process->insertSnippet(call_tracef, *points[i])) {
-			return -1;
-		}
-		}
-	return 0;
-}
 int register_tp_from_mutatee(BPatch_process *handle, BPatch_variableExpr *tp, vector<BPatch_snippet *> *seq)
 {
 	DBG("Inserting tracepoint register call in mutatee");
@@ -258,66 +129,149 @@ int complete_registration(BPatch_process *handle, vector<BPatch_snippet*> *seq ,
 	}
 	DBG("Insert the sequence of registration calls and the flag enabling at the fake function location");
 	handle->insertSnippet(BPatch_sequence(*seq), fake_function[0]->findPoint(BPatch_entry)[0]);
+	return 0;
+}
+int create_tracepoint(BPatch_variableExpr *tp, BPatch_variableExpr * signature, BPatch_variableExpr *name )
+{
+	struct tracepoint t = {
+		.name = (const char*) name->getBaseAddr(), //Does this work?
+		.state = 0,
+		.probes = NULL,
+		.tracepoint_provider_ref = NULL,
+		.signature = (const char*) signature->getBaseAddr(),//Does this work?
+	};
+
+	tp->writeValue((void *) &t, sizeof(struct tracepoint), false);
+	return 0;
 }
 
-int instrument_function_entry(BPatch_process *process,
-			const char *symbol, const char *event_name, bool is_entry)
+int create_event_field_array(BPatch_process *process,int nb_field,
+		struct lttng_event_di_field *event_fields, BPatch_variableExpr *event_descArrayExpr,
+		BPatch_variableExpr *name, BPatch_variableExpr *signature, unsigned long *addr)
 {
-	DBG("Instrumenting entry of function \"%s\"", symbol);
+	BPatch_image *image = process->getImage();
+
+	BPatch_variableExpr *event_fieldsExpr;
+	struct lttng_event_field * fields;
+	if(nb_field > 0)
+	{
+
+		event_fieldsExpr = process->malloc(sizeof(struct lttng_event_field) * nb_field);
+		event_fieldsExpr->writeValue(event_fields, sizeof(struct lttng_event_field) * nb_field, false);
+		fields  = (struct lttng_event_field *)  event_fieldsExpr->getBaseAddr();
+	}
+	else
+	{
+		/*
+		 * Event_fields should be null because the number of field is zero
+		 */
+		assert(event_fields == NULL);
+		event_fieldsExpr = process->malloc(sizeof(long long));
+		/*
+		 * We want NULL written since there is no field in the tracepoint
+		 */
+		int allo = 0;
+		event_fieldsExpr->writeValue(&allo, sizeof(void *), false);
+		nb_field = 0;
+		fields = NULL;
+	}
+
+	/*
+	 * Create event description, this description must be add to an array for the registration
+	 * So we have to allocate an array of event description in the mutatee.
+	 */
+
+	struct lttng_event_desc event_desc = {
+		.name = (const char*) name->getBaseAddr(),
+		.probe_callback = (void (*)()) 1337, //FIXME: must set the probe callback to none null value but is not used
+		.ctx = NULL,
+		.fields = (const struct lttng_event_field *) fields,
+		.nr_fields = (unsigned int) nb_field,
+		.loglevel = NULL,
+		.signature = (const char*) signature->getBaseAddr(),
+	};
+
+	DBG("c1");
+	BPatch_variableExpr *event_descExpr = process->malloc(sizeof(struct lttng_event_desc));
+	event_descExpr->writeValue(&event_desc, sizeof(struct lttng_event_desc), false);
+
+	*addr = (unsigned long) event_descExpr->getBaseAddr();
+
+	return 0;
+}
+
+int instrument_function(BPatch_process *process,
+			const char *symbol, const char *event_name)
+{
+
+	DBG("Instrumenting function \"%s\"", symbol);
 	process->loadLibrary("/home/frdeso/projets/runtime-ust/tp.so");
 	process->loadLibrary("/usr/local/lib/liblttng-ust.so");
 
-	BPatch_variableExpr *nameExpr = process->malloc(sizeof(char) * MAX_STR_LEN);
-	BPatch_variableExpr *signExpr = process->malloc(sizeof(char) * MAX_STR_LEN);
-	BPatch_variableExpr *provExpr = process->malloc(sizeof(char) * MAX_STR_LEN);
+	BPatch_variableExpr *name_entry_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
+	BPatch_variableExpr *name_exit_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
+	BPatch_variableExpr *sign_entry_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
+	BPatch_variableExpr *sign_exit_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
+	BPatch_variableExpr *prov_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
 
 	/*
 	 * Format the name, signature and provider of the event
 	 */
-	char *nameArr =(char *) malloc(sizeof(char) * MAX_STR_LEN);
-	char *signArr =(char *) malloc(sizeof(char) * MAX_STR_LEN);
-	char *provArr =(char *) malloc(sizeof(char) * MAX_STR_LEN);
-#warning "free these ^"
-	if(is_entry)
-	{
-		sprintf(nameArr,"%s_entry", event_name);
-	}
-	else
-	{
-		sprintf(nameArr,"%s_exit", event_name);
-	}
-	strncpy(provArr, nameArr, MAX_STR_LEN);
-	signArr = strchr(provArr,':');
-#warning "might fail"
-	signArr[0] = '\0';
-	signArr += 1;
+	char *name_entry_arr = (char *) malloc(sizeof(char) * MAX_STR_LEN);
+	char *name_exit_arr = (char *) malloc(sizeof(char) * MAX_STR_LEN);
+	char *prov_arr = (char *) malloc(sizeof(char) * MAX_STR_LEN);
 
+	char *sign_entry_arr;
+	char *sign_exit_arr;
 
-	nameExpr->writeValue((char *) nameArr, MAX_STR_LEN, false);
-	signExpr->writeValue((char *) signArr, MAX_STR_LEN, false);
-	provExpr->writeValue((char *) provArr, MAX_STR_LEN, false);
+	sprintf(name_entry_arr,"%s_entry", event_name);
+	sprintf(name_exit_arr,"%s_exit", event_name);
+
+	sign_entry_arr = strchr(name_entry_arr,':');
+	if(sign_entry_arr == NULL)
+	{
+		return -1;
+	}
+	sign_entry_arr +=1;
+
+	sign_exit_arr = strchr(name_exit_arr,':');
+	if(sign_exit_arr == NULL)
+	{
+		return -1;
+	}
+	sign_exit_arr +=1;
+
+	strncpy(prov_arr, name_entry_arr, MAX_STR_LEN);
+	char *prov_delimiter = strchr(prov_arr, ':');
+	prov_delimiter[0] = '\0';
+
+	name_entry_expr->writeValue((char *) name_entry_arr, MAX_STR_LEN, false);
+	name_exit_expr->writeValue((char *) name_exit_arr, MAX_STR_LEN, false);
+	sign_entry_expr->writeValue((char *) sign_entry_arr, MAX_STR_LEN, false);
+	sign_exit_expr->writeValue((char *) sign_exit_arr, MAX_STR_LEN, false);
+	prov_expr->writeValue((char *) prov_arr, MAX_STR_LEN, false);
+
+	/*
+	 * Free char arrays
+	 */
+	free(name_entry_arr);
+	free(name_exit_arr);
+	free(prov_arr);
 
 	/*
 	 * Create a tracepoint structure and copy it in the
 	 * mutatee address space.
 	 */
-
-	struct tracepoint t = {
-		.name = (const char*) nameExpr->getBaseAddr(), //Does this work?
-		.state = 0,
-		.probes = NULL,
-		.tracepoint_provider_ref = NULL,
-		.signature = (const char*) signExpr->getBaseAddr(),//Does this work?
-	};
-
-	BPatch_variableExpr *tpExpr = process->malloc(sizeof(struct tracepoint));
-	tpExpr->writeValue((void *) &t, sizeof(struct tracepoint), false);
-
+	BPatch_variableExpr *tp_entry_expr = process->malloc(sizeof(struct tracepoint));
+	BPatch_variableExpr *tp_exit_expr = process->malloc(sizeof(struct tracepoint));
+	create_tracepoint(tp_entry_expr, sign_entry_expr, name_entry_expr);
+	create_tracepoint(tp_exit_expr, sign_exit_expr, name_exit_expr);
 	/*
 	 *Call the tracepoint_register function rightaway
 	 */
-	vector<BPatch_snippet *> register_call_sequence;
-	register_tp_from_mutatee(process, tpExpr, &register_call_sequence);
+	vector<BPatch_snippet *> *register_call_sequence =  new vector<BPatch_snippet*>();
+	register_tp_from_mutatee(process, tp_entry_expr, register_call_sequence);
+	register_tp_from_mutatee(process, tp_exit_expr, register_call_sequence);
 
 	/*
 	 * Construct a lttng_event_di_field array to contain one field per parameter
@@ -341,18 +295,31 @@ int instrument_function_entry(BPatch_process *process,
 	function = symbol_fcts[0];
 
 	vector<BPatch_localVar *> *params = function->getParams();
-	struct lttng_event_di_field *event_fields;
+	struct lttng_event_di_field *event_entry_fields, *event_exit_fields;
 	int nb_field = params->size();
-	event_fields = (struct lttng_event_di_field* ) malloc(sizeof(struct lttng_event_di_field)*nb_field);
-	DBG("nb field=%d", nb_field);
+
+	if(nb_field > 0)
+	{
+		event_entry_fields = (struct lttng_event_di_field* ) malloc(sizeof(struct lttng_event_di_field)*nb_field);
+		if(event_entry_fields == NULL)
+		{
+			return -1;
+		}
+	}
+	else
+	{
+		event_entry_fields = NULL;
+	}
+
+	event_exit_fields = NULL;
+
+
 
 	int __event_len = 0;
-
-
 	for(int i = 0;i < nb_field ; ++i)
 	{
-		BPatch_variableExpr* fieldNameExpr = process->malloc(sizeof(char) * MAX_STR_LEN);
-		fieldNameExpr->writeValue((char *)(*params)[i]->getName(), MAX_STR_LEN);
+		BPatch_variableExpr* field_name_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
+		field_name_expr->writeValue((char *)(*params)[i]->getName(), MAX_STR_LEN);
 
 		// Add a field depending on the type of the parameter
 		switch((*params)[i]->getType()->getDataClass())
@@ -362,8 +329,8 @@ int instrument_function_entry(BPatch_process *process,
 			string typeName = (*params)[i]->getType()->getName();
 			if(typeName == "char")
 			{
-				add_char_event_field(&event_fields[i],
-						(char *) fieldNameExpr->getBaseAddr());
+				add_char_event_field(&event_entry_fields[i],
+						(char *) field_name_expr->getBaseAddr());
 				__event_len
 					+= (lib_ring_buffer_align(__event_len, lttng_alignof(char))
 					+ sizeof(char));
@@ -372,7 +339,7 @@ int instrument_function_entry(BPatch_process *process,
 			}
 			else
 			{
-				add_int_event_field(&event_fields[i],(char *) fieldNameExpr->getBaseAddr());
+				add_int_event_field(&event_entry_fields[i],(char *) field_name_expr->getBaseAddr());
 				__event_len
 					+= (lib_ring_buffer_align(__event_len, lttng_alignof(int))
 					+ sizeof(int));
@@ -388,53 +355,28 @@ int instrument_function_entry(BPatch_process *process,
 		}
 		}
 	}
+	DBG("b");
+	unsigned long addr[2];
+	BPatch_variableExpr *event_descArrayExpr =
+		process->malloc(sizeof(struct lttng_event_desc*) * 2); //2 events. Entry and exit
+	DBG("b1");
+	create_event_field_array(process, params->size(), event_entry_fields,
+			event_descArrayExpr, name_entry_expr, sign_entry_expr, &(addr[0]));
+	DBG("b2");
+	create_event_field_array(process, 0, event_exit_fields,
+			event_descArrayExpr, name_exit_expr, sign_exit_expr, &(addr[1]));
 
-	BPatch_variableExpr *event_fieldsExpr;
-	if(nb_field > 0)
-	{
-		event_fieldsExpr = process->malloc(sizeof(struct lttng_event_field) * nb_field);
-		event_fieldsExpr->writeValue(event_fields, sizeof(struct lttng_event_field) * nb_field, false);
-	}
-	else
-	{
-		/*
-		 * Event_fields should be null because the number of field is zero
-		 */
-		assert(event_fields);
-		event_fieldsExpr = process->malloc(*(image->findType("int")));
-		event_fieldsExpr->writeValue(&event_fields, sizeof(int), false);
-		DBG("baseaddr=%p", event_fieldsExpr->getBaseAddr())
-	}
+	DBG("b3");
+	event_descArrayExpr->writeValue(addr,  sizeof(struct lttng_event_desc*) * 2, false);
 
-	/*
-	 * Create event description, this description must be add to an array for the registration
-	 * So we have to allocate an array of event description in the mutatee.
-	 */
-
-	struct lttng_event_desc event_desc = {
-		.name = (const char*) nameExpr->getBaseAddr(),
-		.probe_callback = (void (*)()) 1337, //FIXME: must set the probe callback to none null value but is not used
-		.ctx = NULL,
-		.fields = (const struct lttng_event_field *) event_fieldsExpr->getBaseAddr(),
-		.nr_fields = (unsigned int) nb_field,
-		.loglevel = NULL,
-		.signature = (const char*) signExpr->getBaseAddr(),
-	};
-
-	BPatch_variableExpr *event_descExpr = process->malloc(sizeof(struct lttng_event_desc));
-	event_descExpr->writeValue(&event_desc, sizeof(struct lttng_event_desc), false);
-
-	BPatch_variableExpr *event_descArrayExpr = process->malloc(sizeof(struct lttng_event_desc*));
-	unsigned long addr = (unsigned long) event_descExpr->getBaseAddr();
-	event_descArrayExpr->writeValue(&addr,  sizeof(struct lttng_event_desc*), false);
-
+	DBG("c");
 	/*
 	 * Create probe description and register it.
 	 */
 	struct lttng_probe_desc desc = {
-		.provider = (const char*) provExpr->getBaseAddr(),
+		.provider = (const char*) prov_expr->getBaseAddr(),
 		.event_desc = (const struct lttng_event_desc **) event_descArrayExpr->getBaseAddr(),
-		.nr_events = 1,
+		.nr_events = 2,
 		.head = { NULL, NULL },
 		.lazy_init_head = { NULL, NULL },
 		.lazy = 0,
@@ -443,13 +385,14 @@ int instrument_function_entry(BPatch_process *process,
 		.type = LTTNG_PROBE_INSTRUMENT,
 	};
 
+	DBG("d");
 	BPatch_variableExpr *probe_descExpr = process->malloc(sizeof(struct lttng_probe_desc));
 	probe_descExpr->writeValue(&desc, sizeof(struct lttng_probe_desc), false);
 
-	probe_register_from_mutatee(process, probe_descExpr, &register_call_sequence);
+	probe_register_from_mutatee(process, probe_descExpr, register_call_sequence);
 
 	BPatch_variableExpr *isRegistered = process->malloc(*(image->findType("int")));
-	complete_registration(process, &register_call_sequence, isRegistered);
+	complete_registration(process, register_call_sequence, isRegistered);
 	/*
 	 * We are now ready to insert the tracepoint in the running binary.
 	 * This is done in three step.
@@ -458,63 +401,97 @@ int instrument_function_entry(BPatch_process *process,
 	 * 	3. Commit the event
 	 */
 
-	std::vector<BPatch_snippet *> args;
-	std::vector<BPatch_function *> init_ctx_fct, commit_fct;
-	std::vector<BPatch_snippet *> call_sequence;
+	vector<BPatch_snippet *> args;
+	vector<BPatch_function *> init_ctx_fct, commit_fct;
+	vector<BPatch_snippet *> call_entry_seq, call_exit_seq;
 
 	/*
 	 * Allocate context
 	 */
 
-	BPatch_variableExpr *ctxExpr = process->malloc(sizeof(struct lttng_ust_lib_ring_buffer_ctx));
+	BPatch_variableExpr *ctx_entry_expr = process->malloc(sizeof(struct lttng_ust_lib_ring_buffer_ctx));
+	BPatch_variableExpr *ctx_exit_expr = process->malloc(sizeof(struct lttng_ust_lib_ring_buffer_ctx));
 
 	/*
 	 * Initializing context
 	 */
 	image->findFunction("init_ctx", init_ctx_fct);
-#warning "might fail"
-	args.push_back(new BPatch_constExpr(ctxExpr->getBaseAddr()));
-	args.push_back(new BPatch_constExpr(tpExpr->getBaseAddr()));
+	if(init_ctx_fct.size() != 1)
+	{
+		ERR("Function init_ctx not found.")
+		return -1;
+	}
+	
+	args.push_back(new BPatch_constExpr(ctx_entry_expr->getBaseAddr()));
+	args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr( __event_len ));
 	args.push_back(isRegistered);
-	BPatch_funcCallExpr init_ctx_fct_call(*(init_ctx_fct[0]), args);
-	call_sequence.push_back(&init_ctx_fct_call);
+	BPatch_funcCallExpr init_ctx_entry_fct_call(*(init_ctx_fct[0]), args);
+	call_entry_seq.push_back(&init_ctx_entry_fct_call);
 
 	args.clear();
 
+	args.push_back(new BPatch_constExpr(ctx_exit_expr->getBaseAddr()));
+	args.push_back(new BPatch_constExpr(tp_exit_expr->getBaseAddr()));
+	args.push_back(new BPatch_constExpr( 0 ));
+	args.push_back(isRegistered);
+	BPatch_funcCallExpr init_ctx_exit_fct_call(*(init_ctx_fct[0]), args);
+	call_exit_seq.push_back(&init_ctx_exit_fct_call);
+
+	args.clear();
 	/*
 	 * Add call expression for each parameter
 	 */
 	for(int i = 0 ; i < nb_field ; ++i)
 	{
-		args.push_back(new BPatch_constExpr(ctxExpr->getBaseAddr()));
-		args.push_back(new BPatch_constExpr(tpExpr->getBaseAddr()));
+		args.push_back(new BPatch_constExpr(ctx_entry_expr->getBaseAddr()));
+		args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
 		args.push_back(new BPatch_constExpr( __event_len ));
 		args.push_back(new BPatch_paramExpr(i));
 		args.push_back(isRegistered);
 		BPatch_funcCallExpr *field_call = new BPatch_funcCallExpr(*(field_fcts[i]), args);
-		call_sequence.push_back(field_call);
+		call_entry_seq.push_back(field_call);
 
 		args.clear();
 	}
-
 
 	/*
 	 * Commit the event
 	 */
 
-	args.push_back(new BPatch_constExpr(ctxExpr->getBaseAddr()));
-	args.push_back(new BPatch_constExpr(tpExpr->getBaseAddr()));
-	args.push_back(isRegistered);
 	image->findFunction("event_commit", commit_fct);
-#warning "might fail"
-	BPatch_funcCallExpr event_commit_call(*(commit_fct[0]), args);
-	call_sequence.push_back(&event_commit_call);
+	if(commit_fct.size() != 1)
+	{
+		ERR("Function event_commit not found.")
+		return -1;
+	}
 
-	vector<BPatch_point *>* function_entry_points = function->findPoint(BPatch_entry);
-	process->insertSnippet(BPatch_sequence(call_sequence), *(*function_entry_points)[0]);
+	vector<BPatch_point *>* insert_points;
+
+	args.push_back(new BPatch_constExpr(ctx_entry_expr->getBaseAddr()));
+	args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
+	args.push_back(isRegistered);
+	BPatch_funcCallExpr event_commit_entry_call(*(commit_fct[0]), args);
+	call_entry_seq.push_back(&event_commit_entry_call);
+
+	insert_points = function->findPoint(BPatch_entry);
+	process->insertSnippet(BPatch_sequence(call_entry_seq), *(*insert_points)[0]);
+
+
+	args.clear();
+	args.push_back(new BPatch_constExpr(ctx_exit_expr->getBaseAddr()));
+	args.push_back(new BPatch_constExpr(tp_exit_expr->getBaseAddr()));
+	args.push_back(isRegistered);
+	BPatch_funcCallExpr event_commit_exit_call(*(commit_fct[0]), args);
+	call_exit_seq.push_back(&event_commit_exit_call);
+
+	insert_points = function->findPoint(BPatch_exit);
+	process->insertSnippet(BPatch_sequence(call_exit_seq), *(*insert_points)[0]);
+
 	args.clear();
 	field_fcts.clear();
+
+	return 0;
 }
 
 /*
@@ -597,73 +574,23 @@ int ust_instrument_probe_v2(struct ust_app *app,
 		ERR("Can not find dyninst RT library");
 		goto error;
 	}
-	DBG("------avant Attach");
 	process = bpatch.processAttach(NULL, app->pid);
-	DBG("------apres Attach");
 	if (!process) {
 		ERR("Can not attach process %d", app->pid);
 		goto error;
 	}
-	DBG("a");
 	image = process->getImage();
-
-		DBG("a1 %s", symbol);
-//	object = find_match_object(image, object_path);
-//	if (!object) {
-//		ERR("Can not find object %s in process %d", object_path, app->pid);
-//		goto error;
-//	}
 
 	switch (instrumentation) {
 	case LTTNG_UST_FUNCTION:
-		image->findFunction(symbol, functions, false);
-
-		if (functions.size() == 0) {
-			ERR("No functions %s found in app process", symbol);
-			goto error;
-		}
-		if (functions.size() > 1) {
-			ERR("Multiple instances of %s found in app process", symbol);
-			goto error;
-		}
-
-	//	ret = instrument_process_tracef(process, image, *points, functions[0]);
-		ret = instrument_function_entry(process, symbol, name, true);
-		DBG("b");
-	//	ret = instrument_function_entry(process, symbol, name, false);
-//		DBG("---Instrument entry avant");
-//		ret = instrument_process(process, image, *points,
-//				tracepoint->u.function.entry);
-//		DBG("---Instrument entry apres");
-		if (ret) {
-			goto error;
-		}
-
-		//ret = instrument_function_exit(process, symbol, name);
-	//	ret = instrument_process(process, image, *points,
-	//		tracepoint->u.function.exit);
+		
+		ret = instrument_function(process, symbol, name);
 		if (ret) {
 			goto error;
 		}
 		break;
 	case LTTNG_UST_PROBE:
-		image->findFunction(symbol, functions, false);
-
-		if (functions.size() == 0) {
-			ERR("No functions %s found in app process", symbol);
-			goto error;
-		}
-		if (functions.size() > 1) {
-			ERR("Multiple instances of %s found in app process", symbol);
-			goto error;
-		}
 		/* Instrument the entry of the function */
-		points = functions[0]->findPoint(BPatch_entry);
-	//	ret = instrument_process(process, image, *points,
-	//			tracepoint->u.probe);
-		if (ret) {
-			goto error;
-		}
 
 		break;
 	default:
