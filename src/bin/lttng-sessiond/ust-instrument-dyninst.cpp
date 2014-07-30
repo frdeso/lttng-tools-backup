@@ -21,7 +21,7 @@
 #include <BPatch_point.h>
 #define __STDC_LIMIT_MACROS
 
-#define MAX_STR_LEN 30
+#define MAX_STR_LEN 50
 
 extern "C" {
 #include <link.h>
@@ -145,7 +145,7 @@ int create_tracepoint(BPatch_variableExpr *tp, BPatch_variableExpr * signature, 
 	return 0;
 }
 
-int create_event_field_array(BPatch_process *process,int nb_field,
+int create_event_field_array(BPatch_process *process, int nb_field,
 		struct lttng_event_di_field *event_fields, BPatch_variableExpr *event_descArrayExpr,
 		BPatch_variableExpr *name, BPatch_variableExpr *signature, unsigned long *addr)
 {
@@ -155,7 +155,6 @@ int create_event_field_array(BPatch_process *process,int nb_field,
 	struct lttng_event_field * fields;
 	if(nb_field > 0)
 	{
-
 		event_fieldsExpr = process->malloc(sizeof(struct lttng_event_field) * nb_field);
 		event_fieldsExpr->writeValue(event_fields, sizeof(struct lttng_event_field) * nb_field, false);
 		fields  = (struct lttng_event_field *)  event_fieldsExpr->getBaseAddr();
@@ -191,7 +190,6 @@ int create_event_field_array(BPatch_process *process,int nb_field,
 		.signature = (const char*) signature->getBaseAddr(),
 	};
 
-	DBG("c1");
 	BPatch_variableExpr *event_descExpr = process->malloc(sizeof(struct lttng_event_desc));
 	event_descExpr->writeValue(&event_desc, sizeof(struct lttng_event_desc), false);
 
@@ -287,7 +285,7 @@ int instrument_function(BPatch_process *process,
 		return -1;
 	}
 
-	if(symbol_fcts.size() > 0)
+	if(symbol_fcts.size() > 1)
 	{
 		DBG("Multiple symbol %s found in process. Will be using the first one", symbol);
 	}
@@ -298,22 +296,10 @@ int instrument_function(BPatch_process *process,
 	struct lttng_event_di_field *event_entry_fields, *event_exit_fields;
 	int nb_field = params->size();
 
-	if(nb_field > 0)
-	{
-		event_entry_fields = (struct lttng_event_di_field* ) malloc(sizeof(struct lttng_event_di_field)*nb_field);
-		if(event_entry_fields == NULL)
-		{
-			return -1;
-		}
-	}
-	else
-	{
-		event_entry_fields = NULL;
-	}
-
+	event_entry_fields = NULL;
 	event_exit_fields = NULL;
 
-
+	vector<int> supported_params;
 
 	int __event_len = 0;
 	for(int i = 0;i < nb_field ; ++i)
@@ -329,22 +315,32 @@ int instrument_function(BPatch_process *process,
 			string typeName = (*params)[i]->getType()->getName();
 			if(typeName == "char")
 			{
-				add_char_event_field(&event_entry_fields[i],
+				image->findFunction("event_write_char", field_fcts);
+#warning "might fail"
+				supported_params.push_back(i);
+				event_entry_fields = (struct lttng_event_di_field* ) realloc(event_entry_fields, sizeof(struct lttng_event_di_field) * supported_params.size());
+
+				add_char_event_field(&event_entry_fields[supported_params.size()-1],
 						(char *) field_name_expr->getBaseAddr());
 				__event_len
 					+= (lib_ring_buffer_align(__event_len, lttng_alignof(char))
 					+ sizeof(char));
-				image->findFunction("event_write_char", field_fcts);
-#warning "might fail"
 			}
-			else
+			else if (typeName == "int")
 			{
-				add_int_event_field(&event_entry_fields[i],(char *) field_name_expr->getBaseAddr());
+				image->findFunction("event_write_int", field_fcts);
+#warning "might fail"
+				supported_params.push_back(i);
+				event_entry_fields = (struct lttng_event_di_field* ) realloc(event_entry_fields, sizeof(struct lttng_event_di_field) * supported_params.size());
+
+				add_int_event_field(&event_entry_fields[supported_params.size()-1],(char *) field_name_expr->getBaseAddr());
 				__event_len
 					+= (lib_ring_buffer_align(__event_len, lttng_alignof(int))
 					+ sizeof(int));
-				image->findFunction("event_write_int", field_fcts);
-#warning "might fail"
+			}
+			else
+			{
+				continue;
 			}
 			break;
 		}
@@ -360,7 +356,7 @@ int instrument_function(BPatch_process *process,
 	BPatch_variableExpr *event_descArrayExpr =
 		process->malloc(sizeof(struct lttng_event_desc*) * 2); //2 events. Entry and exit
 	DBG("b1");
-	create_event_field_array(process, params->size(), event_entry_fields,
+	create_event_field_array(process, supported_params.size(), event_entry_fields,
 			event_descArrayExpr, name_entry_expr, sign_entry_expr, &(addr[0]));
 	DBG("b2");
 	create_event_field_array(process, 0, event_exit_fields,
@@ -442,12 +438,12 @@ int instrument_function(BPatch_process *process,
 	/*
 	 * Add call expression for each parameter
 	 */
-	for(int i = 0 ; i < nb_field ; ++i)
+	for(int i = 0 ; i < supported_params.size() ; ++i)
 	{
 		args.push_back(new BPatch_constExpr(ctx_entry_expr->getBaseAddr()));
 		args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
 		args.push_back(new BPatch_constExpr( __event_len ));
-		args.push_back(new BPatch_paramExpr(i));
+		args.push_back(new BPatch_paramExpr(supported_params[i]));
 		args.push_back(isRegistered);
 		BPatch_funcCallExpr *field_call = new BPatch_funcCallExpr(*(field_fcts[i]), args);
 		call_entry_seq.push_back(field_call);
