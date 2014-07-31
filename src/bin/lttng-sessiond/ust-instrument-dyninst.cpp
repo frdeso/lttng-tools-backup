@@ -63,10 +63,38 @@ void add_char_event_field( struct lttng_event_di_field *field, char *name)
 
 	memcpy(field, &f, sizeof(struct lttng_event_di_field));
 }
+
+void add_char_ptr_event_field( struct lttng_event_di_field *field, char *name)
+{
+	struct lttng_event_di_field f = {
+	.name = name,
+	.type = {
+		.atype = atype_sequence,
+			.u =
+			{
+				.sequence =
+				{
+					.length_type =
+						__type_integer(unsigned int,
+								LITTLE_ENDIAN,
+								10, none),
+					.elem_type =
+						__type_integer(char,
+								LITTLE_ENDIAN,
+								10, UTF8),
+				},
+			},
+	},
+	.nowrite = 0,
+
+	};
+	memcpy(field, &f, sizeof(struct lttng_event_di_field));
+}
 }
 namespace {
 
-int register_tp_from_mutatee(BPatch_process *handle, BPatch_variableExpr *tp, vector<BPatch_snippet *> *seq)
+int register_tp_from_mutatee(BPatch_process *handle, BPatch_variableExpr *tp,
+				vector<BPatch_snippet *> *seq)
 {
 	DBG("Inserting tracepoint register call in mutatee");
 	vector<BPatch_function*> functions;
@@ -111,7 +139,8 @@ int probe_register_from_mutatee(BPatch_process *handle, BPatch_variableExpr *pro
 	return 0;
 }
 
-int complete_registration(BPatch_process *handle, vector<BPatch_snippet*> *seq ,BPatch_variableExpr *isRegistered)
+int complete_registration(BPatch_process *handle, vector<BPatch_snippet*> *seq,
+		BPatch_variableExpr *isRegistered)
 {
 	DBG("Turn the enable flag ON so the tracepoint is actived");
 	BPatch_arithExpr completed(BPatch_assign, *isRegistered,
@@ -128,10 +157,12 @@ int complete_registration(BPatch_process *handle, vector<BPatch_snippet*> *seq ,
 		return -1;
 	}
 	DBG("Insert the sequence of registration calls and the flag enabling at the fake function location");
-	handle->insertSnippet(BPatch_sequence(*seq), fake_function[0]->findPoint(BPatch_entry)[0]);
+	handle->insertSnippet(BPatch_sequence(*seq),
+			fake_function[0]->findPoint(BPatch_entry)[0]);
 	return 0;
 }
-int create_tracepoint(BPatch_variableExpr *tp, BPatch_variableExpr * signature, BPatch_variableExpr *name )
+int create_tracepoint(BPatch_variableExpr *tp, BPatch_variableExpr * signature,
+			BPatch_variableExpr *name )
 {
 	struct tracepoint t = {
 		.name = (const char*) name->getBaseAddr(), //Does this work?
@@ -274,7 +305,7 @@ int instrument_function(BPatch_process *process,
 	/*
 	 * Construct a lttng_event_di_field array to contain one field per parameter
 	 */
-	vector<BPatch_function*>  field_fcts, symbol_fcts;
+	vector<BPatch_function*>  field_fcts, len_fcts, symbol_fcts;
 	BPatch_function *function;
 
 	BPatch_image *image = process->getImage();
@@ -301,7 +332,6 @@ int instrument_function(BPatch_process *process,
 
 	vector<int> supported_params;
 
-	int __event_len = 0;
 	for(int i = 0;i < nb_field ; ++i)
 	{
 		BPatch_variableExpr* field_name_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
@@ -316,30 +346,60 @@ int instrument_function(BPatch_process *process,
 			if(typeName == "char")
 			{
 				image->findFunction("event_write_char", field_fcts);
+				image->findFunction("update_event_len_char", len_fcts);
 #warning "might fail"
 				supported_params.push_back(i);
-				event_entry_fields = (struct lttng_event_di_field* ) realloc(event_entry_fields, sizeof(struct lttng_event_di_field) * supported_params.size());
+				event_entry_fields =
+					(struct lttng_event_di_field* ) realloc(event_entry_fields,
+							sizeof(struct lttng_event_di_field) * supported_params.size());
 
 				add_char_event_field(&event_entry_fields[supported_params.size()-1],
 						(char *) field_name_expr->getBaseAddr());
-				__event_len
-					+= (lib_ring_buffer_align(__event_len, lttng_alignof(char))
-					+ sizeof(char));
 			}
 			else if (typeName == "int")
 			{
 				image->findFunction("event_write_int", field_fcts);
+				image->findFunction("update_event_len_int", len_fcts);
 #warning "might fail"
 				supported_params.push_back(i);
-				event_entry_fields = (struct lttng_event_di_field* ) realloc(event_entry_fields, sizeof(struct lttng_event_di_field) * supported_params.size());
+				event_entry_fields =
+					(struct lttng_event_di_field* ) realloc(event_entry_fields,
+							sizeof(struct lttng_event_di_field) * supported_params.size());
 
-				add_int_event_field(&event_entry_fields[supported_params.size()-1],(char *) field_name_expr->getBaseAddr());
-				__event_len
-					+= (lib_ring_buffer_align(__event_len, lttng_alignof(int))
-					+ sizeof(int));
+				add_int_event_field(&event_entry_fields[supported_params.size()-1],
+						(char *) field_name_expr->getBaseAddr());
+			}
+			else if (typeName == "float")
+			{
+				continue;
+
+			}
+
+			else
+			{
+				DBG("Scalar type unsupported");
+				continue;
+			}
+			break;
+		}
+		case BPatch_dataPointer:
+		{
+			string constituent_type_name =(*params)[i]->getType()->getConstituentType()->getName();
+			if(constituent_type_name == "char")
+			{
+				supported_params.push_back(i);
+				event_entry_fields =
+					(struct lttng_event_di_field* ) realloc(event_entry_fields,
+							sizeof(struct lttng_event_di_field) * supported_params.size());
+
+				add_char_ptr_event_field(&event_entry_fields[supported_params.size()-1],
+						(char *) field_name_expr->getBaseAddr());
+				image->findFunction("event_write_char_ptr", field_fcts);
+				image->findFunction("update_event_len_char_ptr", len_fcts);
 			}
 			else
 			{
+				DBG("Pointer type unsupported");
 				continue;
 			}
 			break;
@@ -398,8 +458,34 @@ int instrument_function(BPatch_process *process,
 	 */
 
 	vector<BPatch_snippet *> args;
-	vector<BPatch_function *> init_ctx_fct, commit_fct;
 	vector<BPatch_snippet *> call_entry_seq, call_exit_seq;
+	vector<BPatch_function *> init_ctx_fct, commit_fct;
+
+	/*
+	 * Allocate an unsigned int in the tracee to contain the length of the event
+	 * which is calculated each time the event is trigered.
+	 * We add an call that set the event length to zero to the call sequence that is
+	 * executed each time the function is entered
+	 */
+
+	BPatch_variableExpr *entry_event_len_expr = process->malloc(*(image->findType("unsigned int")));
+	BPatch_variableExpr *exit_event_len_expr = process->malloc(*(image->findType("unsigned int")));
+	unsigned int exit_event_len = 0;
+	exit_event_len_expr->writeValue(&exit_event_len, sizeof(unsigned int), false);
+	BPatch_arithExpr event_entry_len_init(BPatch_assign, *entry_event_len_expr,  BPatch_constExpr(0));
+	call_entry_seq.push_back(&event_entry_len_init);
+
+	for(int i = 0 ; i < supported_params.size() ; ++i)
+	{
+		args.push_back(new BPatch_constExpr(entry_event_len_expr->getBaseAddr()));
+		args.push_back(new BPatch_paramExpr(supported_params[i]));
+	//	args.push_back(isRegistered);
+		BPatch_funcCallExpr *len_call =
+			new BPatch_funcCallExpr(*(len_fcts[i]), args);
+		call_entry_seq.push_back(len_call);
+
+		args.clear();
+	}
 
 	/*
 	 * Allocate context
@@ -417,10 +503,10 @@ int instrument_function(BPatch_process *process,
 		ERR("Function init_ctx not found.")
 		return -1;
 	}
-	
+
 	args.push_back(new BPatch_constExpr(ctx_entry_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
-	args.push_back(new BPatch_constExpr( __event_len ));
+	args.push_back(new BPatch_constExpr( entry_event_len_expr->getBaseAddr() ));
 	args.push_back(isRegistered);
 	BPatch_funcCallExpr init_ctx_entry_fct_call(*(init_ctx_fct[0]), args);
 	call_entry_seq.push_back(&init_ctx_entry_fct_call);
@@ -429,7 +515,7 @@ int instrument_function(BPatch_process *process,
 
 	args.push_back(new BPatch_constExpr(ctx_exit_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr(tp_exit_expr->getBaseAddr()));
-	args.push_back(new BPatch_constExpr( 0 ));
+	args.push_back(new BPatch_constExpr( exit_event_len_expr->getBaseAddr() ));
 	args.push_back(isRegistered);
 	BPatch_funcCallExpr init_ctx_exit_fct_call(*(init_ctx_fct[0]), args);
 	call_exit_seq.push_back(&init_ctx_exit_fct_call);
@@ -442,7 +528,7 @@ int instrument_function(BPatch_process *process,
 	{
 		args.push_back(new BPatch_constExpr(ctx_entry_expr->getBaseAddr()));
 		args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
-		args.push_back(new BPatch_constExpr( __event_len ));
+		args.push_back(new BPatch_constExpr( entry_event_len_expr->getBaseAddr()));
 		args.push_back(new BPatch_paramExpr(supported_params[i]));
 		args.push_back(isRegistered);
 		BPatch_funcCallExpr *field_call = new BPatch_funcCallExpr(*(field_fcts[i]), args);
@@ -473,8 +559,8 @@ int instrument_function(BPatch_process *process,
 	insert_points = function->findPoint(BPatch_entry);
 	process->insertSnippet(BPatch_sequence(call_entry_seq), *(*insert_points)[0]);
 
-
 	args.clear();
+
 	args.push_back(new BPatch_constExpr(ctx_exit_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr(tp_exit_expr->getBaseAddr()));
 	args.push_back(isRegistered);
