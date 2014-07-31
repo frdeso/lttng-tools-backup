@@ -42,6 +42,17 @@ void add_int_event_field( struct lttng_event_di_field *field, char *name)
 	memcpy(field, &f, sizeof(struct lttng_event_di_field));
 }
 
+void add_ptr_event_field( struct lttng_event_di_field *field, char *name)
+{
+	struct lttng_event_di_field f = {
+		.name = name,
+		.type = __type_integer(void*, LITTLE_ENDIAN, 16, none),
+		.nowrite = 0
+	};
+
+	memcpy(field, &f, sizeof(struct lttng_event_di_field));
+}
+
 void add_float_event_field( struct lttng_event_di_field *field, char *name)
 {
 	struct lttng_event_di_field f = {
@@ -234,8 +245,6 @@ int instrument_function(BPatch_process *process,
 {
 
 	DBG("Instrumenting function \"%s\"", symbol);
-	process->loadLibrary("/home/frdeso/projets/runtime-ust/tp.so");
-	process->loadLibrary("/usr/local/lib/liblttng-ust.so");
 
 	BPatch_variableExpr *name_entry_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
 	BPatch_variableExpr *name_exit_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
@@ -371,8 +380,17 @@ int instrument_function(BPatch_process *process,
 			}
 			else if (typeName == "float")
 			{
-				continue;
+			//	continue;
+				image->findFunction("event_write_float", field_fcts);
+				image->findFunction("update_event_len_float", len_fcts);
+#warning "might fail"
+				supported_params.push_back(i);
+				event_entry_fields =
+					(struct lttng_event_di_field* ) realloc(event_entry_fields,
+							sizeof(struct lttng_event_di_field) * supported_params.size());
 
+				add_float_event_field(&event_entry_fields[supported_params.size()-1],
+						(char *) field_name_expr->getBaseAddr());
 			}
 
 			else
@@ -384,9 +402,18 @@ int instrument_function(BPatch_process *process,
 		}
 		case BPatch_dataPointer:
 		{
+			if((*params)[i]->getType()->getConstituentType()->getDataClass() != BPatch_dataScalar )
+			{
+				DBG("Pointer type unsupported");
+				continue;
+			}
 			string constituent_type_name =(*params)[i]->getType()->getConstituentType()->getName();
+
 			if(constituent_type_name == "char")
 			{
+				image->findFunction("event_write_char_ptr", field_fcts);
+				image->findFunction("update_event_len_char_ptr", len_fcts);
+
 				supported_params.push_back(i);
 				event_entry_fields =
 					(struct lttng_event_di_field* ) realloc(event_entry_fields,
@@ -394,13 +421,20 @@ int instrument_function(BPatch_process *process,
 
 				add_char_ptr_event_field(&event_entry_fields[supported_params.size()-1],
 						(char *) field_name_expr->getBaseAddr());
-				image->findFunction("event_write_char_ptr", field_fcts);
-				image->findFunction("update_event_len_char_ptr", len_fcts);
 			}
 			else
 			{
-				DBG("Pointer type unsupported");
-				continue;
+				image->findFunction("event_write_ptr", field_fcts);
+				image->findFunction("update_event_len_ptr", len_fcts);
+
+				supported_params.push_back(i);
+				event_entry_fields =
+					(struct lttng_event_di_field* ) realloc(event_entry_fields,
+							sizeof(struct lttng_event_di_field) * supported_params.size());
+
+				add_ptr_event_field(&event_entry_fields[supported_params.size()-1],
+						(char *) field_name_expr->getBaseAddr());
+
 			}
 			break;
 		}
@@ -411,7 +445,7 @@ int instrument_function(BPatch_process *process,
 		}
 		}
 	}
-	DBG("b");
+
 	unsigned long addr[2];
 	BPatch_variableExpr *event_descArrayExpr =
 		process->malloc(sizeof(struct lttng_event_desc*) * 2); //2 events. Entry and exit
