@@ -29,6 +29,7 @@ extern "C" {
 #include "ust-instrument.h"
 #include "ust-events.h"
 #include <lttng/tracepoint.h>
+#include <pthread.h>
 #include <lttng/ringbuffer-config.h>
 
 void add_int_event_field( struct lttng_event_di_field *field, char *name)
@@ -102,6 +103,7 @@ void add_char_ptr_event_field( struct lttng_event_di_field *field, char *name)
 	memcpy(field, &f, sizeof(struct lttng_event_di_field));
 }
 }
+
 namespace {
 
 int register_tp_from_mutatee(BPatch_process *handle, BPatch_variableExpr *tp,
@@ -112,7 +114,11 @@ int register_tp_from_mutatee(BPatch_process *handle, BPatch_variableExpr *tp,
 	BPatch_image *image = handle->getImage();
 	std::vector<BPatch_snippet *> args;
 
-	image->findFunction("tracepoint_register", functions);
+	BPatch_variableExpr *is_done_once = handle->malloc(*(image->findType("int")));
+	int default_value = 0;
+	is_done_once->writeValue(&default_value, sizeof(int), false);
+
+	image->findFunction("tracepoint_register_only_once", functions);
 	if(functions.size() == 0)
 	{
 		ERR("tracepoint_register function not found");
@@ -120,6 +126,8 @@ int register_tp_from_mutatee(BPatch_process *handle, BPatch_variableExpr *tp,
 	}
 
 	args.push_back(new BPatch_constExpr( tp->getBaseAddr()));
+	args.push_back(new BPatch_constExpr(is_done_once->getBaseAddr()));
+
 	BPatch_funcCallExpr *tp_register_call =
 			new BPatch_funcCallExpr(*functions[0], args);
 
@@ -127,15 +135,19 @@ int register_tp_from_mutatee(BPatch_process *handle, BPatch_variableExpr *tp,
 	return 0;
 }
 
-int probe_register_from_mutatee(BPatch_process *handle, BPatch_variableExpr *probe,
-		vector<BPatch_snippet *> *seq)
+int probe_register_from_mutatee(BPatch_process *handle,
+		BPatch_variableExpr *probe, vector<BPatch_snippet *> *seq)
 {
 	DBG("Inserting probe register call in mutatee");
 	vector<BPatch_function*> functions;
 	BPatch_image *image = handle->getImage();
 	std::vector<BPatch_snippet *> args;
 
-	image->findFunction("lttng_probe_register", functions);
+	BPatch_variableExpr *is_done_once = handle->malloc(*(image->findType("int")));
+	int default_value = 0;
+	is_done_once->writeValue(&default_value, sizeof(int), false);
+
+	image->findFunction("lttng_probe_register_only_once", functions);
 	if(functions.size() == 0)
 	{
 		ERR("lttng_probe_register function not found");
@@ -143,6 +155,8 @@ int probe_register_from_mutatee(BPatch_process *handle, BPatch_variableExpr *pro
 	}
 
 	args.push_back(new BPatch_constExpr(probe->getBaseAddr()));
+	args.push_back(new BPatch_constExpr(is_done_once->getBaseAddr()));
+
 	BPatch_funcCallExpr *probe_register_call =
 			new BPatch_funcCallExpr(*functions[0], args);
 	seq->push_back(probe_register_call);
@@ -155,7 +169,8 @@ int complete_registration(BPatch_process *handle, vector<BPatch_snippet*> *seq,
 {
 	DBG("Turn the enable flag ON so the tracepoint is actived");
 	BPatch_arithExpr completed(BPatch_assign, *isRegistered,
-			BPatch_arithExpr(BPatch_plus, *isRegistered, BPatch_constExpr(1)));
+			BPatch_arithExpr(BPatch_plus,
+				*isRegistered, BPatch_constExpr(1)));
 
 	seq->push_back(&completed);
 
@@ -167,7 +182,8 @@ int complete_registration(BPatch_process *handle, vector<BPatch_snippet*> *seq,
 		ERR("lttng_ust_fake_function function not found");
 		return -1;
 	}
-	DBG("Insert the sequence of registration calls and the flag enabling at the fake function location");
+	DBG("Insert the sequence of registration calls and the flag enabling \
+			at the fake function location");
 	handle->insertSnippet(BPatch_sequence(*seq),
 			fake_function[0]->findPoint(BPatch_entry)[0]);
 	return 0;
@@ -176,20 +192,24 @@ int create_tracepoint(BPatch_variableExpr *tp, BPatch_variableExpr * signature,
 			BPatch_variableExpr *name )
 {
 	struct tracepoint t = {
-		.name = (const char*) name->getBaseAddr(), //Does this work?
+		.name = (const char*) name->getBaseAddr(),
 		.state = 0,
 		.probes = NULL,
 		.tracepoint_provider_ref = NULL,
-		.signature = (const char*) signature->getBaseAddr(),//Does this work?
+		.signature = (const char*) signature->getBaseAddr(),
 	};
 
 	tp->writeValue((void *) &t, sizeof(struct tracepoint), false);
 	return 0;
 }
 
-int create_event_field_array(BPatch_process *process, int nb_field,
-		struct lttng_event_di_field *event_fields, BPatch_variableExpr *event_descArrayExpr,
-		BPatch_variableExpr *name, BPatch_variableExpr *signature, unsigned long *addr)
+int create_event_field_array(BPatch_process *process,
+		int nb_field,
+		struct lttng_event_di_field *event_fields,
+		BPatch_variableExpr *event_descArrayExpr,
+		BPatch_variableExpr *name,
+		BPatch_variableExpr *signature,
+		unsigned long *addr)
 {
 	BPatch_image *image = process->getImage();
 
@@ -197,9 +217,12 @@ int create_event_field_array(BPatch_process *process, int nb_field,
 	struct lttng_event_field * fields;
 	if(nb_field > 0)
 	{
-		event_fieldsExpr = process->malloc(sizeof(struct lttng_event_field) * nb_field);
-		event_fieldsExpr->writeValue(event_fields, sizeof(struct lttng_event_field) * nb_field, false);
-		fields  = (struct lttng_event_field *)  event_fieldsExpr->getBaseAddr();
+		event_fieldsExpr = process->malloc(
+				sizeof(struct lttng_event_field) * nb_field);
+		event_fieldsExpr->writeValue(event_fields,
+				sizeof(struct lttng_event_field) * nb_field,
+				false);
+		fields = (struct lttng_event_field *) event_fieldsExpr->getBaseAddr();
 	}
 	else
 	{
@@ -218,8 +241,9 @@ int create_event_field_array(BPatch_process *process, int nb_field,
 	}
 
 	/*
-	 * Create event description, this description must be add to an array for the registration
-	 * So we have to allocate an array of event description in the mutatee.
+	 * Create event description, this description must be add to an array
+	 * for the registration. So we have to allocate an array of event
+	 * description in the mutatee.
 	 */
 
 	struct lttng_event_desc event_desc = {
@@ -232,25 +256,56 @@ int create_event_field_array(BPatch_process *process, int nb_field,
 		.signature = (const char*) signature->getBaseAddr(),
 	};
 
-	BPatch_variableExpr *event_descExpr = process->malloc(sizeof(struct lttng_event_desc));
-	event_descExpr->writeValue(&event_desc, sizeof(struct lttng_event_desc), false);
+	BPatch_variableExpr *event_descExpr = process->malloc(
+			sizeof(struct lttng_event_desc));
+	event_descExpr->writeValue(&event_desc,
+			sizeof(struct lttng_event_desc),
+			false);
 
 	*addr = (unsigned long) event_descExpr->getBaseAddr();
 
 	return 0;
 }
 
+int thread_terminated = 1;
+
+void *status_change_poller_thread(void *arg)
+{
+	thread_terminated = 0;
+	BPatch *bpatch = (BPatch*) arg;
+	vector<BPatch_process *> *processes = bpatch->getProcesses();
+	while(processes->size() > 0)
+	{
+		bpatch->pollForStatusChange();
+		usleep(5000);
+		delete processes;
+		processes = bpatch->getProcesses();
+	}
+	delete processes;
+	thread_terminated = 1;
+	DBG("Poller thread exiting");
+}
+void spawn_poller_thread(pthread_t *thr, BPatch *bpatch)
+{
+	DBG("Creating dyninst poller thread");
+	pthread_create(thr, NULL, &status_change_poller_thread,bpatch);
+}
 int instrument_function(BPatch_process *process,
 			const char *symbol, const char *event_name)
 {
 
 	DBG("Instrumenting function \"%s\"", symbol);
 
-	BPatch_variableExpr *name_entry_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
-	BPatch_variableExpr *name_exit_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
-	BPatch_variableExpr *sign_entry_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
-	BPatch_variableExpr *sign_exit_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
-	BPatch_variableExpr *prov_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
+	BPatch_variableExpr *name_entry_expr = process->malloc(sizeof(char)
+			* MAX_STR_LEN);
+	BPatch_variableExpr *name_exit_expr = process->malloc(sizeof(char)
+			* MAX_STR_LEN);
+	BPatch_variableExpr *sign_entry_expr = process->malloc(sizeof(char)
+			* MAX_STR_LEN);
+	BPatch_variableExpr *sign_exit_expr = process->malloc(sizeof(char)
+			* MAX_STR_LEN);
+	BPatch_variableExpr *prov_expr = process->malloc(sizeof(char)
+			* MAX_STR_LEN);
 
 	/*
 	 * Format the name, signature and provider of the event
@@ -300,19 +355,23 @@ int instrument_function(BPatch_process *process,
 	 * Create a tracepoint structure and copy it in the
 	 * mutatee address space.
 	 */
-	BPatch_variableExpr *tp_entry_expr = process->malloc(sizeof(struct tracepoint));
-	BPatch_variableExpr *tp_exit_expr = process->malloc(sizeof(struct tracepoint));
+	BPatch_variableExpr *tp_entry_expr = process->malloc(
+			sizeof(struct tracepoint));
+	BPatch_variableExpr *tp_exit_expr = process->malloc(
+			sizeof(struct tracepoint));
 	create_tracepoint(tp_entry_expr, sign_entry_expr, name_entry_expr);
 	create_tracepoint(tp_exit_expr, sign_exit_expr, name_exit_expr);
 	/*
 	 *Call the tracepoint_register function rightaway
 	 */
-	vector<BPatch_snippet *> *register_call_sequence =  new vector<BPatch_snippet*>();
+	vector<BPatch_snippet *> *register_call_sequence =
+				new vector<BPatch_snippet*>();
 	register_tp_from_mutatee(process, tp_entry_expr, register_call_sequence);
 	register_tp_from_mutatee(process, tp_exit_expr, register_call_sequence);
 
 	/*
-	 * Construct a lttng_event_di_field array to contain one field per parameter
+	 * Construct a lttng_event_di_field array to contain one
+	 * field per parameter
 	 */
 	vector<BPatch_function*>  field_fcts, len_fcts, symbol_fcts;
 	BPatch_function *function;
@@ -327,7 +386,8 @@ int instrument_function(BPatch_process *process,
 
 	if(symbol_fcts.size() > 1)
 	{
-		DBG("Multiple symbol %s found in process. Will be using the first one", symbol);
+		DBG("Multiple symbol %s found in process. Will be \
+				using the first one", symbol);
 	}
 
 	function = symbol_fcts[0];
@@ -343,8 +403,11 @@ int instrument_function(BPatch_process *process,
 
 	for(int i = 0;i < nb_field ; ++i)
 	{
-		BPatch_variableExpr* field_name_expr = process->malloc(sizeof(char) * MAX_STR_LEN);
-		field_name_expr->writeValue((char *)(*params)[i]->getName(), MAX_STR_LEN);
+		BPatch_variableExpr* field_name_expr = process->malloc(
+				sizeof(char) * MAX_STR_LEN);
+		field_name_expr->writeValue((char *)(*params)[i]->getName(),
+				MAX_STR_LEN,
+				false);
 
 		// Add a field depending on the type of the parameter
 		switch((*params)[i]->getType()->getDataClass())
@@ -354,8 +417,10 @@ int instrument_function(BPatch_process *process,
 			string typeName = (*params)[i]->getType()->getName();
 			if(typeName == "char")
 			{
-				image->findFunction("event_write_char", field_fcts);
-				image->findFunction("update_event_len_char", len_fcts);
+				image->findFunction("event_write_char",
+						field_fcts);
+				image->findFunction("update_event_len_char",
+						len_fcts);
 #warning "might fail"
 				supported_params.push_back(i);
 				event_entry_fields =
@@ -475,7 +540,7 @@ int instrument_function(BPatch_process *process,
 		.type = LTTNG_PROBE_INSTRUMENT,
 	};
 
-	DBG("d");
+	DBG("d, %lu", sizeof(lttng_probe_desc));
 	BPatch_variableExpr *probe_descExpr = process->malloc(sizeof(struct lttng_probe_desc));
 	probe_descExpr->writeValue(&desc, sizeof(struct lttng_probe_desc), false);
 
@@ -528,6 +593,8 @@ int instrument_function(BPatch_process *process,
 	BPatch_variableExpr *ctx_entry_expr = process->malloc(sizeof(struct lttng_ust_lib_ring_buffer_ctx));
 	BPatch_variableExpr *ctx_exit_expr = process->malloc(sizeof(struct lttng_ust_lib_ring_buffer_ctx));
 
+	BPatch_variableExpr *is_entry_ready = process->malloc(*(image->findType("int")));
+	BPatch_variableExpr *is_exit_ready = process->malloc(*(image->findType("int")));
 	/*
 	 * Initializing context
 	 */
@@ -542,6 +609,8 @@ int instrument_function(BPatch_process *process,
 	args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr( entry_event_len_expr->getBaseAddr() ));
 	args.push_back(isRegistered);
+	args.push_back(new BPatch_constExpr( is_entry_ready->getBaseAddr() ));
+
 	BPatch_funcCallExpr init_ctx_entry_fct_call(*(init_ctx_fct[0]), args);
 	call_entry_seq.push_back(&init_ctx_entry_fct_call);
 
@@ -551,6 +620,8 @@ int instrument_function(BPatch_process *process,
 	args.push_back(new BPatch_constExpr(tp_exit_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr( exit_event_len_expr->getBaseAddr() ));
 	args.push_back(isRegistered);
+	args.push_back(new BPatch_constExpr( is_exit_ready->getBaseAddr() ));
+
 	BPatch_funcCallExpr init_ctx_exit_fct_call(*(init_ctx_fct[0]), args);
 	call_exit_seq.push_back(&init_ctx_exit_fct_call);
 
@@ -564,7 +635,7 @@ int instrument_function(BPatch_process *process,
 		args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
 		args.push_back(new BPatch_constExpr( entry_event_len_expr->getBaseAddr()));
 		args.push_back(new BPatch_paramExpr(supported_params[i]));
-		args.push_back(isRegistered);
+		args.push_back(is_entry_ready);
 		BPatch_funcCallExpr *field_call = new BPatch_funcCallExpr(*(field_fcts[i]), args);
 		call_entry_seq.push_back(field_call);
 
@@ -586,7 +657,7 @@ int instrument_function(BPatch_process *process,
 
 	args.push_back(new BPatch_constExpr(ctx_entry_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
-	args.push_back(isRegistered);
+	args.push_back(is_entry_ready);
 	BPatch_funcCallExpr event_commit_entry_call(*(commit_fct[0]), args);
 	call_entry_seq.push_back(&event_commit_entry_call);
 
@@ -597,7 +668,7 @@ int instrument_function(BPatch_process *process,
 
 	args.push_back(new BPatch_constExpr(ctx_exit_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr(tp_exit_expr->getBaseAddr()));
-	args.push_back(isRegistered);
+	args.push_back(is_exit_ready);
 	BPatch_funcCallExpr event_commit_exit_call(*(commit_fct[0]), args);
 	call_exit_seq.push_back(&event_commit_exit_call);
 
@@ -671,6 +742,8 @@ int ust_instrument_probe(struct ust_app *app,
 	return -1;
 }
 
+BPatch bpatch;
+pthread_t thr;
 int ust_instrument_probe_v2(struct ust_app *app,
 		const char *name,
 		enum lttng_ust_instrumentation instrumentation,
@@ -678,8 +751,6 @@ int ust_instrument_probe_v2(struct ust_app *app,
 		const char *symbol,
 		uint64_t offset)
 {
-
-	BPatch bpatch;
 	BPatch_process *process = NULL;
 	BPatch_image *image;
 	/* Instrumentation points of probe callback function */
@@ -691,6 +762,8 @@ int ust_instrument_probe_v2(struct ust_app *app,
 		goto error;
 	}
 	process = bpatch.processAttach(NULL, app->pid);
+	process->continueExecution();
+	process->stopExecution();
 	if (!process) {
 		ERR("Can not attach process %d", app->pid);
 		goto error;
@@ -699,7 +772,7 @@ int ust_instrument_probe_v2(struct ust_app *app,
 
 	switch (instrumentation) {
 	case LTTNG_UST_FUNCTION:
-		
+
 		ret = instrument_function(process, symbol, name);
 		if (ret) {
 			goto error;
@@ -707,7 +780,7 @@ int ust_instrument_probe_v2(struct ust_app *app,
 		break;
 	case LTTNG_UST_PROBE:
 		/* Instrument the entry of the function */
-
+		ERR("Probe instrumentation not supported at the moment")
 		break;
 	default:
 		goto error;
@@ -722,7 +795,14 @@ error:
 
 end:
 	if (process) {
+		//We volontarily dont detach from the app
+		process->continueExecution();
 		process->detach(true);
+//		int *ret_value;
+//		if(thread_terminated)
+//		{
+//			spawn_poller_thread(&thr, &bpatch);
+//		}
 	}
 	return ret;
 }
