@@ -3008,6 +3008,7 @@ struct ust_app *ust_app_create(struct ust_register_msg *msg, int sock)
 	/* Copy name and make sure it's NULL terminated. */
 	strncpy(lta->name, msg->name, sizeof(lta->name));
 	lta->name[UST_APP_PROCNAME_LEN] = '\0';
+	lta->dyninst_process_handle = NULL;
 
 	/*
 	 * Before this can be called, when receiving the registration information,

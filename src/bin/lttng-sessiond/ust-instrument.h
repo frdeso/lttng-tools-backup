@@ -40,6 +40,8 @@ int ust_instrument_probe_v2(struct ust_app *app,
 		uint64_t addr,
 		const char *symbol,
 		uint64_t offset);
+void destroy_dyninst_process_handle(struct ust_app *app);
+
 #else /* HAVE_UST_DYNAMIC_INSTRUMENT && HAVE_LIBLTTNG_UST_CTL */
 
 static

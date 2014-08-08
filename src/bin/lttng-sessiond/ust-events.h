@@ -5,6 +5,7 @@
  * lttng/ust-events.h
  *
  * Copyright 2010-2012 (c) - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright 2014 (c) - Francis Deslauriers <francis.deslauriers@efficios.com>
  *
  * Holds LTTng per-session event registry.
  *
@@ -42,8 +43,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define LTTNG_UST_UUID_LEN		16
 
 /*
  * Tracepoint provider version. Compatibility based on the major number.

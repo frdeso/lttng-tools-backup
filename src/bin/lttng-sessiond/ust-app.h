@@ -275,6 +275,8 @@ struct ust_app {
 	 * a negative value indicating that the JUL application is gone.
 	 */
 	int jul_app_sock;
+
+	void *dyninst_process_handle;
 };
 
 #ifdef HAVE_LIBLTTNG_UST_CTL
