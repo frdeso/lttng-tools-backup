@@ -267,29 +267,6 @@ int create_event_field_array(BPatch_process *process,
 	return 0;
 }
 
-int thread_terminated = 1;
-
-void *status_change_poller_thread(void *arg)
-{
-	thread_terminated = 0;
-	BPatch *bpatch = (BPatch*) arg;
-	vector<BPatch_process *> *processes = bpatch->getProcesses();
-	while(processes->size() > 0)
-	{
-		bpatch->pollForStatusChange();
-		usleep(5000);
-		delete processes;
-		processes = bpatch->getProcesses();
-	}
-	delete processes;
-	thread_terminated = 1;
-	DBG("Poller thread exiting");
-}
-void spawn_poller_thread(pthread_t *thr, BPatch *bpatch)
-{
-	DBG("Creating dyninst poller thread");
-	pthread_create(thr, NULL, &status_change_poller_thread,bpatch);
-}
 int instrument_function(BPatch_process *process,
 			const char *symbol, const char *event_name)
 {
@@ -730,27 +707,15 @@ end:
 }
 
 }
-int ust_instrument_probe(struct ust_app *app,
-		const char *object_path,
-		const char *name,
-		struct lttng_ust_instrument_tracepoint_attr *tracepoint,
-		enum lttng_ust_instrumentation instrumentation,
-		uint64_t addr,
-		const char *symbol,
-		uint64_t offset){
-	ERR("DEPRECATED: Should never be called");
-	return -1;
-}
 
-BPatch bpatch;
-pthread_t thr;
-int ust_instrument_probe_v2(struct ust_app *app,
+int ust_instrument_probe(struct ust_app *app,
 		const char *name,
 		enum lttng_ust_instrumentation instrumentation,
 		uint64_t addr,
 		const char *symbol,
 		uint64_t offset)
 {
+	BPatch bpatch;
 	BPatch_process *process = NULL;
 	BPatch_image *image;
 	/* Instrumentation points of probe callback function */
@@ -762,7 +727,6 @@ int ust_instrument_probe_v2(struct ust_app *app,
 		goto error;
 	}
 	process = bpatch.processAttach(NULL, app->pid);
-	process->continueExecution();
 	process->stopExecution();
 	if (!process) {
 		ERR("Can not attach process %d", app->pid);
@@ -795,14 +759,12 @@ error:
 
 end:
 	if (process) {
-		//We volontarily dont detach from the app
+		//FIXME:We volontarily detach from the app
+		//since we don't know how to make it work while being attached.
+		//This is make that we can only instrument one time.
 		process->continueExecution();
 		process->detach(true);
-//		int *ret_value;
-//		if(thread_terminated)
-//		{
-//			spawn_poller_thread(&thr, &bpatch);
-//		}
+
 	}
 	return ret;
 }

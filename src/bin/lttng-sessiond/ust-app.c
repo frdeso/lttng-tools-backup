@@ -1289,7 +1289,7 @@ int instrument_app(struct ust_app_event *ua_event, struct ust_app *app)
 	int ret;
 	struct lttng_ust_event event = ua_event->attr;
 	DBG("Instrumenting app");
-	ust_instrument_probe_v2(app, event.name,
+	ust_instrument_probe(app, event.name,
 			event.instrumentation, event.u.probe.addr,
 			event.u.probe.symbol_name, event.u.probe.offset);
 	ret = ustctl_activate_tp(app->sock, ua_event->obj);
@@ -4934,6 +4934,8 @@ int ust_app_recv_notify(int sock)
 	}
 	case USTCTL_NOTIFY_CMD_INSTRUMENT:
 	{
+
+#if 0
 		enum lttng_ust_instrumentation instrumentation;
 		char name[LTTNG_UST_SYM_NAME_LEN], symbol[LTTNG_UST_SYM_NAME_LEN];
 		char object_path[PATH_MAX];
@@ -4984,6 +4986,7 @@ int ust_app_recv_notify(int sock)
 			goto error;
 		}
 		break;
+#endif
 	}
 	default:
 		/* Should NEVER happen. */

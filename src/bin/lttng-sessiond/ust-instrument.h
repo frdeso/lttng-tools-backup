@@ -18,23 +18,13 @@
 #ifndef _LTT_UST_INSTRUMENT_H
 #define _LTT_UST_INSTRUMENT_H
 
-//extern "C" 
-//{
+
 #include <stdint.h>
 #include "trace-ust.h"
-//}
+
 #if defined(HAVE_UST_DYNAMIC_INSTRUMENT) && defined(HAVE_LIBLTTNG_UST_CTL)
 
-int ust_instrument_probe(struct ust_app* app,
-		const char *object_path,
-		const char *name,
-		struct lttng_ust_instrument_tracepoint_attr *tracepoint,
-		enum lttng_ust_instrumentation instrumentation,
-		uint64_t addr,
-		const char *symbol,
-		uint64_t offset);
-
-int ust_instrument_probe_v2(struct ust_app *app,
+int ust_instrument_probe(struct ust_app *app,
 		const char *name,
 		enum lttng_ust_instrumentation instrumentation,
 		uint64_t addr,
