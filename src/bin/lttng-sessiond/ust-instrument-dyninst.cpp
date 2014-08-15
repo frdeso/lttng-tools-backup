@@ -350,7 +350,7 @@ int instrument_function(BPatch_process *process,
 	 * Construct a lttng_event_di_field array to contain one
 	 * field per parameter
 	 */
-	vector<BPatch_function*>  field_fcts, len_fcts, symbol_fcts;
+	vector<BPatch_function*>  field_fcts, exit_field_fcts, len_fcts,exit_len_fcts, symbol_fcts;
 	BPatch_function *function;
 
 	BPatch_image *image = process->getImage();
@@ -407,7 +407,7 @@ int instrument_function(BPatch_process *process,
 				add_char_event_field(&event_entry_fields[supported_params.size()-1],
 						(char *) field_name_expr->getBaseAddr());
 			}
-			else if (typeName == "int")
+			else if (typeName == "int" )
 			{
 				image->findFunction("event_write_int", field_fcts);
 				image->findFunction("update_event_len_int", len_fcts);
@@ -434,10 +434,32 @@ int instrument_function(BPatch_process *process,
 				add_float_event_field(&event_entry_fields[supported_params.size()-1],
 						(char *) field_name_expr->getBaseAddr());
 			}
-
 			else
 			{
 				DBG("Scalar type unsupported");
+				continue;
+			}
+			break;
+		}
+		case BPatch_dataTypeDefine:
+		{
+			string typeName = (*params)[i]->getType()->getName();
+			if(typeName == "size_t")
+			{
+				image->findFunction("event_write_int", field_fcts);
+				image->findFunction("update_event_len_int", len_fcts);
+#warning "might fail"
+				supported_params.push_back(i);
+				event_entry_fields =
+					(struct lttng_event_di_field* ) realloc(event_entry_fields,
+							sizeof(struct lttng_event_di_field) * supported_params.size());
+
+				add_int_event_field(&event_entry_fields[supported_params.size()-1],
+						(char *) field_name_expr->getBaseAddr());
+			}
+			else
+			{
+				DBG("dataTypeDefine type unsupported");
 				continue;
 			}
 			break;
@@ -451,7 +473,7 @@ int instrument_function(BPatch_process *process,
 			}
 			string constituent_type_name =(*params)[i]->getType()->getConstituentType()->getName();
 
-			if(constituent_type_name == "char")
+			if(constituent_type_name == "char" || constituent_type_name == "const char")
 			{
 				image->findFunction("event_write_char_ptr", field_fcts);
 				image->findFunction("update_event_len_char_ptr", len_fcts);
@@ -488,6 +510,28 @@ int instrument_function(BPatch_process *process,
 		}
 	}
 
+	/*
+	 * Field for return value in exit tracepoint
+	 */
+
+	BPatch_variableExpr* exit_field_name_expr = process->malloc(
+					sizeof(char) * MAX_STR_LEN);
+	exit_field_name_expr->writeValue(string("ret").c_str(),
+			MAX_STR_LEN,
+			false);
+	BPatch_type *return_type = function->getReturnType();
+	int nb_field_exit = 0;
+	if(return_type != NULL && return_type->getName() != "void *")
+	{
+		image->findFunction("event_write_ptr", exit_field_fcts);
+		image->findFunction("update_event_len_ptr", exit_len_fcts);
+		event_exit_fields = (struct lttng_event_di_field* )
+			realloc(event_exit_fields, sizeof(struct lttng_event_di_field));
+		add_ptr_event_field(event_exit_fields,
+				(char *) exit_field_name_expr->getBaseAddr());
+		nb_field_exit = 1;
+	}
+
 	unsigned long addr[2];
 	BPatch_variableExpr *event_descArrayExpr =
 		process->malloc(sizeof(struct lttng_event_desc*) * 2); //2 events. Entry and exit
@@ -495,13 +539,15 @@ int instrument_function(BPatch_process *process,
 	create_event_field_array(process, supported_params.size(), event_entry_fields,
 			event_descArrayExpr, name_entry_expr, sign_entry_expr, &(addr[0]));
 	DBG("b2");
-	create_event_field_array(process, 0, event_exit_fields,
+	create_event_field_array(process,nb_field_exit , event_exit_fields,
 			event_descArrayExpr, name_exit_expr, sign_exit_expr, &(addr[1]));
 
 	DBG("b3");
 	event_descArrayExpr->writeValue(addr,  sizeof(struct lttng_event_desc*) * 2, false);
 
 	DBG("c");
+
+
 	/*
 	 * Create probe description and register it.
 	 */
@@ -517,7 +563,6 @@ int instrument_function(BPatch_process *process,
 		.type = LTTNG_PROBE_INSTRUMENT,
 	};
 
-	DBG("d, %lu", sizeof(lttng_probe_desc));
 	BPatch_variableExpr *probe_descExpr = process->malloc(sizeof(struct lttng_probe_desc));
 	probe_descExpr->writeValue(&desc, sizeof(struct lttng_probe_desc), false);
 
@@ -546,19 +591,33 @@ int instrument_function(BPatch_process *process,
 
 	BPatch_variableExpr *entry_event_len_expr = process->malloc(*(image->findType("unsigned int")));
 	BPatch_variableExpr *exit_event_len_expr = process->malloc(*(image->findType("unsigned int")));
-	unsigned int exit_event_len = 0;
-	exit_event_len_expr->writeValue(&exit_event_len, sizeof(unsigned int), false);
+
 	BPatch_arithExpr event_entry_len_init(BPatch_assign, *entry_event_len_expr,  BPatch_constExpr(0));
+	BPatch_arithExpr event_exit_len_init(BPatch_assign, *exit_event_len_expr,  BPatch_constExpr(0));
+
 	call_entry_seq.push_back(&event_entry_len_init);
+	call_exit_seq.push_back(&event_exit_len_init);
 
 	for(int i = 0 ; i < supported_params.size() ; ++i)
 	{
 		args.push_back(new BPatch_constExpr(entry_event_len_expr->getBaseAddr()));
 		args.push_back(new BPatch_paramExpr(supported_params[i]));
-	//	args.push_back(isRegistered);
+
 		BPatch_funcCallExpr *len_call =
 			new BPatch_funcCallExpr(*(len_fcts[i]), args);
 		call_entry_seq.push_back(len_call);
+
+		args.clear();
+	}
+
+	if(nb_field_exit)
+	{
+		args.push_back(new BPatch_constExpr(exit_event_len_expr->getBaseAddr()));
+		args.push_back(new BPatch_retExpr());
+
+		BPatch_funcCallExpr *len_exit_call =
+			new BPatch_funcCallExpr(*(exit_len_fcts[0]), args);
+		call_exit_seq.push_back(len_exit_call);
 
 		args.clear();
 	}
@@ -615,6 +674,19 @@ int instrument_function(BPatch_process *process,
 		args.push_back(is_entry_ready);
 		BPatch_funcCallExpr *field_call = new BPatch_funcCallExpr(*(field_fcts[i]), args);
 		call_entry_seq.push_back(field_call);
+
+		args.clear();
+	}
+
+	if(nb_field_exit)
+	{
+		args.push_back(new BPatch_constExpr(ctx_exit_expr->getBaseAddr()));
+		args.push_back(new BPatch_constExpr(tp_exit_expr->getBaseAddr()));
+		args.push_back(new BPatch_constExpr( exit_event_len_expr->getBaseAddr()));
+		args.push_back(new BPatch_retExpr());
+		args.push_back(is_entry_ready);
+		BPatch_funcCallExpr *exit_field_call = new BPatch_funcCallExpr(*(exit_field_fcts[0]), args);
+		call_exit_seq.push_back(exit_field_call);
 
 		args.clear();
 	}

@@ -25,7 +25,7 @@ usage: $0 options
 
 OPTIONS:
    -h      			Show this message
-   -p <symbol name> Add probe at this symbol
+   -p <symbol name> Add probe at this symbol(Not implemented)
    -f <symbol name> Add probes at the entry and exit of this symbol
    -n      			name of the probe
 
@@ -43,16 +43,8 @@ while [ "$1" != "" ]; do
 		shift
 		EVENTS_LIST=$EVENTS_LIST' '$1
 		shift
-		EVENTS_LIST=$EVENTS_LIST' '$1
-		shift
-		EVENTS_LIST=$EVENTS_LIST' '$1
-		shift
 		NB_EVENT=$((NB_EVENT+1))
 	elif test "$1" = "-f"; then
-		EVENTS_LIST=$EVENTS_LIST' '$1
-		shift
-		EVENTS_LIST=$EVENTS_LIST' '$1
-		shift
 		EVENTS_LIST=$EVENTS_LIST' '$1
 		shift
 		EVENTS_LIST=$EVENTS_LIST' '$1
@@ -60,8 +52,7 @@ while [ "$1" != "" ]; do
 		NB_EVENT=$((NB_EVENT+1))
 	elif test "$1" = "-l"; then
 	    	shift
-	    	export DYNINSTAPI_RT_LIB=/usr/lib/libdyninstAPI_RT.so
-	    	/home/frdeso/projets/dyninst-sandbox/list-functions/mutator $(echo $@ | xargs which )
+		lttng_list_functions $(echo $@ | xargs which )
 		exit
 	else
 		PROG=$@
@@ -110,9 +101,11 @@ do
 	EVENT_NAME=$(echo $EVENTS_LIST | cut -d' ' -f4)
 
 	if test "$PROBE_TYPE" = "-f"; then
-		lttng enable-event 'dyn-tp:'$EVENT_NAME  --function $TARGET'@'$SYMBOL -u > /dev/null
+		lttng enable-event 'dyn-tp:'$SYMBOL  --function $TARGET'@'$SYMBOL -u > /dev/null
 	else
-		lttng enable-event 'dyn-tp:'$EVENT_NAME  --probe $TARGET'@'$SYMBOL -u > /dev/null
+		#Not working yet
+		echo "Probe instrumentation not implemented"
+		#lttng enable-event 'dyn-tp:'$EVENT_NAME  --probe $TARGET'@'$SYMBOL -u > /dev/null
 	fi
 
 	# Remove the newly added event for the event list
