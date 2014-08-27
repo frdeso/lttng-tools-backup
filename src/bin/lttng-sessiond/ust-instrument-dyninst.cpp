@@ -165,12 +165,12 @@ int probe_register_from_mutatee(BPatch_process *handle,
 }
 
 int complete_registration(BPatch_process *handle, vector<BPatch_snippet*> *seq,
-		BPatch_variableExpr *isRegistered)
+		BPatch_variableExpr *is_registered)
 {
 	DBG("Turn the enable flag ON so the tracepoint is actived");
-	BPatch_arithExpr completed(BPatch_assign, *isRegistered,
+	BPatch_arithExpr completed(BPatch_assign, *is_registered,
 			BPatch_arithExpr(BPatch_plus,
-				*isRegistered, BPatch_constExpr(1)));
+				*is_registered, BPatch_constExpr(1)));
 
 	seq->push_back(&completed);
 
@@ -206,23 +206,23 @@ int create_tracepoint(BPatch_variableExpr *tp, BPatch_variableExpr * signature,
 int create_event_field_array(BPatch_process *process,
 		int nb_field,
 		struct lttng_event_di_field *event_fields,
-		BPatch_variableExpr *event_descArrayExpr,
+		BPatch_variableExpr *event_desc_arr_expr,
 		BPatch_variableExpr *name,
 		BPatch_variableExpr *signature,
 		unsigned long *addr)
 {
 	BPatch_image *image = process->getImage();
 
-	BPatch_variableExpr *event_fieldsExpr;
+	BPatch_variableExpr *event_fields_expr;
 	struct lttng_event_field * fields;
 	if(nb_field > 0)
 	{
-		event_fieldsExpr = process->malloc(
+		event_fields_expr = process->malloc(
 				sizeof(struct lttng_event_field) * nb_field);
-		event_fieldsExpr->writeValue(event_fields,
+		event_fields_expr->writeValue(event_fields,
 				sizeof(struct lttng_event_field) * nb_field,
 				false);
-		fields = (struct lttng_event_field *) event_fieldsExpr->getBaseAddr();
+		fields = (struct lttng_event_field *) event_fields_expr->getBaseAddr();
 	}
 	else
 	{
@@ -230,12 +230,12 @@ int create_event_field_array(BPatch_process *process,
 		 * Event_fields should be null because the number of field is zero
 		 */
 		assert(event_fields == NULL);
-		event_fieldsExpr = process->malloc(sizeof(long long));
+		event_fields_expr = process->malloc(sizeof(long long));
 		/*
 		 * We want NULL written since there is no field in the tracepoint
 		 */
 		int allo = 0;
-		event_fieldsExpr->writeValue(&allo, sizeof(void *), false);
+		event_fields_expr->writeValue(&allo, sizeof(void *), false);
 		nb_field = 0;
 		fields = NULL;
 	}
@@ -256,13 +256,13 @@ int create_event_field_array(BPatch_process *process,
 		.signature = (const char*) signature->getBaseAddr(),
 	};
 
-	BPatch_variableExpr *event_descExpr = process->malloc(
+	BPatch_variableExpr *event_desc_expr = process->malloc(
 			sizeof(struct lttng_event_desc));
-	event_descExpr->writeValue(&event_desc,
+	event_desc_expr->writeValue(&event_desc,
 			sizeof(struct lttng_event_desc),
 			false);
 
-	*addr = (unsigned long) event_descExpr->getBaseAddr();
+	*addr = (unsigned long) event_desc_expr->getBaseAddr();
 
 	return 0;
 }
@@ -350,7 +350,7 @@ int instrument_function(BPatch_process *process,
 	 * Construct a lttng_event_di_field array to contain one
 	 * field per parameter
 	 */
-	vector<BPatch_function*>  field_fcts, exit_field_fcts, len_fcts,exit_len_fcts, symbol_fcts;
+	vector<BPatch_function*>  entry_field_fcts, exit_field_fcts, entry_len_fcts,exit_len_fcts, symbol_fcts;
 	BPatch_function *function;
 
 	BPatch_image *image = process->getImage();
@@ -395,9 +395,9 @@ int instrument_function(BPatch_process *process,
 			if(typeName == "char")
 			{
 				image->findFunction("event_write_char",
-						field_fcts);
+						entry_field_fcts);
 				image->findFunction("update_event_len_char",
-						len_fcts);
+						entry_len_fcts);
 #warning "might fail"
 				supported_params.push_back(i);
 				event_entry_fields =
@@ -409,8 +409,8 @@ int instrument_function(BPatch_process *process,
 			}
 			else if (typeName == "int" )
 			{
-				image->findFunction("event_write_int", field_fcts);
-				image->findFunction("update_event_len_int", len_fcts);
+				image->findFunction("event_write_int", entry_field_fcts);
+				image->findFunction("update_event_len_int", entry_len_fcts);
 #warning "might fail"
 				supported_params.push_back(i);
 				event_entry_fields =
@@ -423,8 +423,8 @@ int instrument_function(BPatch_process *process,
 			else if (typeName == "float")
 			{
 			//	continue;
-				image->findFunction("event_write_float", field_fcts);
-				image->findFunction("update_event_len_float", len_fcts);
+				image->findFunction("event_write_float", entry_field_fcts);
+				image->findFunction("update_event_len_float", entry_len_fcts);
 #warning "might fail"
 				supported_params.push_back(i);
 				event_entry_fields =
@@ -446,8 +446,8 @@ int instrument_function(BPatch_process *process,
 			string typeName = (*params)[i]->getType()->getName();
 			if(typeName == "size_t")
 			{
-				image->findFunction("event_write_int", field_fcts);
-				image->findFunction("update_event_len_int", len_fcts);
+				image->findFunction("event_write_int", entry_field_fcts);
+				image->findFunction("update_event_len_int", entry_len_fcts);
 #warning "might fail"
 				supported_params.push_back(i);
 				event_entry_fields =
@@ -475,8 +475,8 @@ int instrument_function(BPatch_process *process,
 
 			if(constituent_type_name == "char" || constituent_type_name == "const char")
 			{
-				image->findFunction("event_write_char_ptr", field_fcts);
-				image->findFunction("update_event_len_char_ptr", len_fcts);
+				image->findFunction("event_write_char_ptr",entry_field_fcts);
+				image->findFunction("update_event_len_char_ptr", entry_len_fcts);
 
 				supported_params.push_back(i);
 				event_entry_fields =
@@ -488,8 +488,8 @@ int instrument_function(BPatch_process *process,
 			}
 			else
 			{
-				image->findFunction("event_write_ptr", field_fcts);
-				image->findFunction("update_event_len_ptr", len_fcts);
+				image->findFunction("event_write_ptr", entry_field_fcts);
+				image->findFunction("update_event_len_ptr", entry_len_fcts);
 
 				supported_params.push_back(i);
 				event_entry_fields =
@@ -519,6 +519,7 @@ int instrument_function(BPatch_process *process,
 	exit_field_name_expr->writeValue(string("ret").c_str(),
 			MAX_STR_LEN,
 			false);
+
 	BPatch_type *return_type = function->getReturnType();
 	int nb_field_exit = 0;
 	if(return_type != NULL && return_type->getName() != "void *")
@@ -533,17 +534,17 @@ int instrument_function(BPatch_process *process,
 	}
 
 	unsigned long addr[2];
-	BPatch_variableExpr *event_descArrayExpr =
+	BPatch_variableExpr *event_desc_arr_expr =
 		process->malloc(sizeof(struct lttng_event_desc*) * 2); //2 events. Entry and exit
 	DBG("b1");
 	create_event_field_array(process, supported_params.size(), event_entry_fields,
-			event_descArrayExpr, name_entry_expr, sign_entry_expr, &(addr[0]));
+			event_desc_arr_expr, name_entry_expr, sign_entry_expr, &(addr[0]));
 	DBG("b2");
 	create_event_field_array(process,nb_field_exit , event_exit_fields,
-			event_descArrayExpr, name_exit_expr, sign_exit_expr, &(addr[1]));
+			event_desc_arr_expr, name_exit_expr, sign_exit_expr, &(addr[1]));
 
 	DBG("b3");
-	event_descArrayExpr->writeValue(addr,  sizeof(struct lttng_event_desc*) * 2, false);
+	event_desc_arr_expr->writeValue(addr,  sizeof(struct lttng_event_desc*) * 2, false);
 
 	DBG("c");
 
@@ -553,7 +554,7 @@ int instrument_function(BPatch_process *process,
 	 */
 	struct lttng_probe_desc desc = {
 		.provider = (const char*) prov_expr->getBaseAddr(),
-		.event_desc = (const struct lttng_event_desc **) event_descArrayExpr->getBaseAddr(),
+		.event_desc = (const struct lttng_event_desc **) event_desc_arr_expr->getBaseAddr(),
 		.nr_events = 2,
 		.head = { NULL, NULL },
 		.lazy_init_head = { NULL, NULL },
@@ -563,13 +564,13 @@ int instrument_function(BPatch_process *process,
 		.type = LTTNG_PROBE_INSTRUMENT,
 	};
 
-	BPatch_variableExpr *probe_descExpr = process->malloc(sizeof(struct lttng_probe_desc));
-	probe_descExpr->writeValue(&desc, sizeof(struct lttng_probe_desc), false);
+	BPatch_variableExpr *probe_desc_expr = process->malloc(sizeof(struct lttng_probe_desc));
+	probe_desc_expr->writeValue(&desc, sizeof(struct lttng_probe_desc), false);
 
-	probe_register_from_mutatee(process, probe_descExpr, register_call_sequence);
+	probe_register_from_mutatee(process, probe_desc_expr, register_call_sequence);
 
-	BPatch_variableExpr *isRegistered = process->malloc(*(image->findType("int")));
-	complete_registration(process, register_call_sequence, isRegistered);
+	BPatch_variableExpr *is_registered = process->malloc(*(image->findType("int")));
+	complete_registration(process, register_call_sequence, is_registered);
 	/*
 	 * We are now ready to insert the tracepoint in the running binary.
 	 * This is done in three step.
@@ -604,7 +605,7 @@ int instrument_function(BPatch_process *process,
 		args.push_back(new BPatch_paramExpr(supported_params[i]));
 
 		BPatch_funcCallExpr *len_call =
-			new BPatch_funcCallExpr(*(len_fcts[i]), args);
+			new BPatch_funcCallExpr(*(entry_len_fcts[i]), args);
 		call_entry_seq.push_back(len_call);
 
 		args.clear();
@@ -644,7 +645,7 @@ int instrument_function(BPatch_process *process,
 	args.push_back(new BPatch_constExpr(ctx_entry_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr(tp_entry_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr( entry_event_len_expr->getBaseAddr() ));
-	args.push_back(isRegistered);
+	args.push_back(is_registered);
 	args.push_back(new BPatch_constExpr( is_entry_ready->getBaseAddr() ));
 
 	BPatch_funcCallExpr init_ctx_entry_fct_call(*(init_ctx_fct[0]), args);
@@ -655,7 +656,7 @@ int instrument_function(BPatch_process *process,
 	args.push_back(new BPatch_constExpr(ctx_exit_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr(tp_exit_expr->getBaseAddr()));
 	args.push_back(new BPatch_constExpr( exit_event_len_expr->getBaseAddr() ));
-	args.push_back(isRegistered);
+	args.push_back(is_registered);
 	args.push_back(new BPatch_constExpr( is_exit_ready->getBaseAddr() ));
 
 	BPatch_funcCallExpr init_ctx_exit_fct_call(*(init_ctx_fct[0]), args);
@@ -672,7 +673,7 @@ int instrument_function(BPatch_process *process,
 		args.push_back(new BPatch_constExpr( entry_event_len_expr->getBaseAddr()));
 		args.push_back(new BPatch_paramExpr(supported_params[i]));
 		args.push_back(is_entry_ready);
-		BPatch_funcCallExpr *field_call = new BPatch_funcCallExpr(*(field_fcts[i]), args);
+		BPatch_funcCallExpr *field_call = new BPatch_funcCallExpr(*(entry_field_fcts[i]), args);
 		call_entry_seq.push_back(field_call);
 
 		args.clear();
@@ -725,7 +726,8 @@ int instrument_function(BPatch_process *process,
 	process->insertSnippet(BPatch_sequence(call_exit_seq), *(*insert_points)[0]);
 
 	args.clear();
-	field_fcts.clear();
+	entry_field_fcts.clear();
+	exit_field_fcts.clear();
 
 	return 0;
 }
