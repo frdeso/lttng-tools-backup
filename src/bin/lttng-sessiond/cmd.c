@@ -655,6 +655,11 @@ static int list_lttng_kernel_events(char *channel_name,
 		case LTTNG_KERNEL_SYSCALL:
 			(*events)[i].type = LTTNG_EVENT_SYSCALL;
 			break;
+		case LTTNG_KERNEL_UPROBE:
+			(*events)[i].type = LTTNG_EVENT_UPROBE;
+			memcpy(&(*events)[i].attr.uprobe, &event->event->u.uprobe,
+					sizeof(struct lttng_kernel_uprobe));
+			break;
 		case LTTNG_KERNEL_ALL:
 			assert(0);
 			break;

@@ -315,6 +315,14 @@ static void print_events(struct lttng_event *event)
 			MSG("%ssymbol: %s", indent8, event->attr.probe.symbol_name);
 		}
 		break;
+	case LTTNG_EVENT_UPROBE:
+		MSG("%s%s (type: uprobe)%s%s", indent6,
+				event->name, enabled_string(event->enabled),
+				safe_string(filter_msg));
+
+		MSG("%spath: %s", indent8, event->attr.uprobe.path);
+		MSG("%soffset: 0x%" PRIx64, indent8, event->attr.uprobe.offset);
+		break;
 	case LTTNG_EVENT_FUNCTION_ENTRY:
 		MSG("%s%s (type: function)%s%s", indent6,
 				event->name, enabled_string(event->enabled),

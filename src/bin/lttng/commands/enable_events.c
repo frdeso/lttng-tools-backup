@@ -50,6 +50,7 @@ static int opt_log4j;
 static int opt_python;
 static int opt_enable_all;
 static char *opt_probe;
+static char *opt_uprobe;
 static char *opt_function;
 static char *opt_channel_name;
 static char *opt_filter;
@@ -59,6 +60,7 @@ enum {
 	OPT_HELP = 1,
 	OPT_TRACEPOINT,
 	OPT_PROBE,
+	OPT_UPROBE,
 	OPT_FUNCTION,
 	OPT_SYSCALL,
 	OPT_USERSPACE,
@@ -85,6 +87,7 @@ static struct poptOption long_options[] = {
 	{"python",         'p', POPT_ARG_VAL, &opt_python, 1, 0, 0},
 	{"tracepoint",     0,   POPT_ARG_NONE, 0, OPT_TRACEPOINT, 0, 0},
 	{"probe",          0,   POPT_ARG_STRING, &opt_probe, OPT_PROBE, 0, 0},
+	{"uprobe",          0,   POPT_ARG_STRING, &opt_uprobe, OPT_UPROBE, 0, 0},
 	{"function",       0,   POPT_ARG_STRING, &opt_function, OPT_FUNCTION, 0, 0},
 	{"syscall",        0,   POPT_ARG_NONE, 0, OPT_SYSCALL, 0, 0},
 	{"loglevel",       0,     POPT_ARG_STRING, 0, OPT_LOGLEVEL, 0, 0},
@@ -161,6 +164,43 @@ static int parse_probe_opts(struct lttng_event *ev, char *opt)
 
 	/* No match */
 	ret = CMD_ERROR;
+
+end:
+	return ret;
+}
+
+/*
+ * Parse uprobe options.
+ */
+static int parse_uprobe_opts(struct lttng_event *ev, char *opt)
+{
+	int ret;
+	char s_hex[19];
+	char name[LTTNG_SYMBOL_NAME_LEN];
+
+	if (opt == NULL) {
+		ret = -1;
+		goto end;
+	}
+
+	/* Check for path+offset */
+	ret = sscanf(opt, "%[^'+']+%s", name, s_hex);
+	if (ret == 2) {
+		strncpy(ev->attr.uprobe.path, name, LTTNG_SYMBOL_NAME_LEN);
+		ev->attr.uprobe.path[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
+		DBG("probe path %s", ev->attr.uprobe.path);
+		if (strlen(s_hex) == 0) {
+			ERR("Invalid uprobe offset %s", s_hex);
+			ret = -1;
+			goto end;
+		}
+		ev->attr.uprobe.offset = strtoul(s_hex, NULL, 0);
+		DBG("uprobe offset %" PRIu64, ev->attr.uprobe.offset);
+		goto end;
+	}
+
+	/* No match */
+	ret = -1;
 
 end:
 	return ret;
@@ -919,6 +959,14 @@ static int enable_events(char *session_name)
 					goto error;
 				}
 				break;
+			case LTTNG_EVENT_UPROBE:
+				ret = parse_uprobe_opts(&ev, opt_uprobe);
+				if (ret < 0) {
+					ERR("Unable to parse uprobe options");
+					ret = 0;
+					goto error;
+				}
+				break;
 			case LTTNG_EVENT_FUNCTION:
 				ret = parse_probe_opts(&ev, opt_function);
 				if (ret) {
@@ -951,6 +999,7 @@ static int enable_events(char *session_name)
 				ev.name[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
 				break;
 			case LTTNG_EVENT_PROBE:
+			case LTTNG_EVENT_UPROBE:
 			case LTTNG_EVENT_FUNCTION:
 			case LTTNG_EVENT_SYSCALL:
 			default:
@@ -1267,6 +1316,9 @@ int cmd_enable_events(int argc, const char **argv)
 			break;
 		case OPT_PROBE:
 			opt_event_type = LTTNG_EVENT_PROBE;
+			break;
+		case OPT_UPROBE:
+			opt_event_type = LTTNG_EVENT_UPROBE;
 			break;
 		case OPT_FUNCTION:
 			opt_event_type = LTTNG_EVENT_FUNCTION;

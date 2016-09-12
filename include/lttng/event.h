@@ -36,6 +36,7 @@ enum lttng_event_type {
 	LTTNG_EVENT_FUNCTION_ENTRY            = 3,
 	LTTNG_EVENT_NOOP                      = 4,
 	LTTNG_EVENT_SYSCALL                   = 5,
+	LTTNG_EVENT_UPROBE                    = 6,
 };
 
 /*
@@ -221,6 +222,20 @@ struct lttng_event_function_attr {
 	char padding[LTTNG_EVENT_FUNCTION_PADDING1];
 };
 
+
+/*
+ * Event uprobe.
+ *
+ * The structures should be initialized to zero before use.
+ */
+#define LTTNG_EVENT_UPROBE_PADDING1         24
+struct lttng_event_uprobe_attr {
+	char path[LTTNG_SYMBOL_NAME_LEN];
+	uint64_t offset;
+
+	char padding[LTTNG_EVENT_UPROBE_PADDING1];
+};
+
 /*
  * Generic lttng event
  *
@@ -274,6 +289,7 @@ struct lttng_event {
 	union {
 		struct lttng_event_probe_attr probe;
 		struct lttng_event_function_attr ftrace;
+		struct lttng_event_uprobe_attr uprobe;
 
 		char padding[LTTNG_EVENT_PADDING2];
 	} attr;

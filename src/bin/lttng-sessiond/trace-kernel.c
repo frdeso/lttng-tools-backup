@@ -277,6 +277,13 @@ struct ltt_kernel_event *trace_kernel_create_event(struct lttng_event *ev,
 				ev->attr.probe.symbol_name, LTTNG_KERNEL_SYM_NAME_LEN);
 		attr->u.kprobe.symbol_name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
 		break;
+	case LTTNG_EVENT_UPROBE:
+		attr->instrumentation = LTTNG_KERNEL_UPROBE;
+		attr->u.uprobe.offset = ev->attr.uprobe.offset;
+		strncpy(attr->u.uprobe.path,
+				ev->attr.uprobe.path, LTTNG_KERNEL_SYM_NAME_LEN);
+		attr->u.uprobe.path[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
+		break;
 	case LTTNG_EVENT_FUNCTION:
 		attr->instrumentation = LTTNG_KERNEL_KRETPROBE;
 		attr->u.kretprobe.addr = ev->attr.probe.addr;
