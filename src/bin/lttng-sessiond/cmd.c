@@ -1930,6 +1930,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 			break;
 		}
 		case LTTNG_EVENT_PROBE:
+		case LTTNG_EVENT_UPROBE:
 		case LTTNG_EVENT_FUNCTION:
 		case LTTNG_EVENT_FUNCTION_ENTRY:
 		case LTTNG_EVENT_TRACEPOINT:

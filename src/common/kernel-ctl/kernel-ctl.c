@@ -25,6 +25,9 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <common/common.h>
+#include <common/utils.h>
+
 
 #include "kernel-ctl.h"
 #include "kernel-ioctl.h"
@@ -263,6 +266,12 @@ int kernctl_create_event(int fd, struct lttng_kernel_event *ev)
 				ev->u.kretprobe.symbol_name,
 				sizeof(old_event.u.kretprobe.symbol_name));
 			break;
+//		case LTTNG_KERNEL_UPROBE:
+//			old_event.u.uprobe.offset = ev->u.uprobe.offset;
+//			memcpy(old_event.u.uprobe.path,
+//				ev->u.uprobe.path,
+//				sizeof(old_event.u.uprobe.path));
+//			break;
 		case LTTNG_KERNEL_FUNCTION:
 			memcpy(old_event.u.ftrace.symbol_name,
 					ev->u.ftrace.symbol_name,
@@ -275,6 +284,7 @@ int kernctl_create_event(int fd, struct lttng_kernel_event *ev)
 		return LTTNG_IOCTL_NO_CHECK(fd, LTTNG_KERNEL_OLD_EVENT,
 			        &old_event);
 	}
+	DBG2("frdeso: ev.u.uprobe.path: %s + offset:%lld\n", ev->u.uprobe.path, ev->u.uprobe.offset);
 	return LTTNG_IOCTL_NO_CHECK(fd, LTTNG_KERNEL_EVENT, ev);
 }
 
