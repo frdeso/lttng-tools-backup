@@ -174,24 +174,25 @@ end:
  */
 static int parse_uprobe_opts(struct lttng_event *ev, char *opt)
 {
-	int ret;
+	int ret = CMD_SUCCESS;
+	int num_token;
 	char s_hex[19];
 	char name[LTTNG_SYMBOL_NAME_LEN];
 
 	if (opt == NULL) {
-		ret = -1;
+		ret = CMD_ERROR;
 		goto end;
 	}
 
 	/* Check for path+offset */
-	ret = sscanf(opt, "%[^'+']+%s", name, s_hex);
-	if (ret == 2) {
+	num_token = sscanf(opt, "%[^'+']+%s", name, s_hex);
+	if (num_token == 2) {
 		strncpy(ev->attr.uprobe.path, name, LTTNG_SYMBOL_NAME_LEN);
 		ev->attr.uprobe.path[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
 		DBG("probe path %s", ev->attr.uprobe.path);
 		if (strlen(s_hex) == 0) {
 			ERR("Invalid uprobe offset %s", s_hex);
-			ret = -1;
+			ret = CMD_ERROR;
 			goto end;
 		}
 		ev->attr.uprobe.offset = strtoul(s_hex, NULL, 0);
@@ -200,7 +201,7 @@ static int parse_uprobe_opts(struct lttng_event *ev, char *opt)
 	}
 
 	/* No match */
-	ret = -1;
+	ret = CMD_ERROR;
 
 end:
 	return ret;
