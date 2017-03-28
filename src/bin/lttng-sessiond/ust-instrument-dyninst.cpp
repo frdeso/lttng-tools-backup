@@ -32,6 +32,8 @@ extern "C" {
 #include <pthread.h>
 #include <lttng/ringbuffer-config.h>
 
+using namespace std;
+
 void add_int_event_field( struct lttng_event_di_field *field, char *name)
 {
 	struct lttng_event_di_field f = {
