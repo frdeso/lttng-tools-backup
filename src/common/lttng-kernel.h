@@ -157,4 +157,11 @@ struct lttng_kernel_filter_bytecode {
 	char data[0];
 } LTTNG_PACKED;
 
+#define KERNEL_EXCLUSION_PADDING	32
+struct lttng_kernel_event_exclusion {
+	uint32_t count;
+	char padding[KERNEL_EXCLUSION_PADDING];
+	char names[LTTNG_SYMBOL_NAME_LEN][0];
+} LTTNG_PACKED;
+
 #endif /* _LTTNG_KERNEL_H */

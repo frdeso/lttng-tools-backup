@@ -108,7 +108,8 @@ int event_kernel_disable_event(struct ltt_kernel_channel *kchan,
  */
 int event_kernel_enable_event(struct ltt_kernel_channel *kchan,
 		struct lttng_event *event, char *filter_expression,
-		struct lttng_filter_bytecode *filter)
+		struct lttng_filter_bytecode *filter,
+		struct lttng_event_exclusion *exclusion)
 {
 	int ret;
 	struct ltt_kernel_event *kevent;
@@ -117,13 +118,14 @@ int event_kernel_enable_event(struct ltt_kernel_channel *kchan,
 	assert(event);
 
 	kevent = trace_kernel_find_event(event->name, kchan,
-			event->type, filter);
+			event->type, filter, exclusion);
 	if (kevent == NULL) {
 		ret = kernel_create_event(event, kchan,
-			filter_expression, filter);
+			filter_expression, filter, exclusion);
 		/* We have passed ownership */
 		filter_expression = NULL;
 		filter = NULL;
+		exclusion = NULL;
 		if (ret < 0) {
 			switch (-ret) {
 			case EEXIST:
@@ -154,6 +156,7 @@ int event_kernel_enable_event(struct ltt_kernel_channel *kchan,
 end:
 	free(filter_expression);
 	free(filter);
+	free(exclusion);
 	return ret;
 }
 

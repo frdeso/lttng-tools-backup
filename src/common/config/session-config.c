@@ -1700,7 +1700,6 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 				ret = -LTTNG_ERR_NOMEM;
 				goto end;
 			}
-
 			for (exclusion_node = xmlFirstElementChild(node); exclusion_node;
 					exclusion_node = xmlNextElementSibling(exclusion_node)) {
 				xmlChar *content =

@@ -24,6 +24,7 @@
 
 #include <common/defaults.h>
 #include <common/common.h>
+#include <common/exclusion.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/relayd/relayd.h>
 #include <common/utils.h>
@@ -608,7 +609,7 @@ static int list_lttng_kernel_events(char *channel_name,
 
 	/* Compute required extended infos size */
 	cds_list_for_each_entry(event, &kchan->events_list.head, list) {
-		increment_extended_len(event->filter_expression, NULL,
+		increment_extended_len(event->filter_expression, event->exclusion,
 			&extended_len);
 	}
 
@@ -629,6 +630,8 @@ static int list_lttng_kernel_events(char *channel_name,
 		(*events)[i].enabled = event->enabled;
 		(*events)[i].filter =
 				(unsigned char) !!event->filter_expression;
+		(*events)[i].exclusion =
+				(unsigned char) !!event->exclusion;
 
 		switch (event->event->instrumentation) {
 		case LTTNG_KERNEL_TRACEPOINT:
@@ -662,7 +665,7 @@ static int list_lttng_kernel_events(char *channel_name,
 		i++;
 
 		/* Append extended info */
-		append_extended_info(event->filter_expression, NULL,
+		append_extended_info(event->filter_expression, event->exclusion,
 			&extended_at);
 	}
 
@@ -1786,6 +1789,11 @@ static int _cmd_enable_event(struct ltt_session *session,
 
 			strutils_normalize_star_glob_pattern(name);
 		}
+		if (validate_exclusion(exclusion)) {
+			ret = LTTNG_ERR_EXCLUSION_INVAL;
+			goto error;
+		}
+
 	}
 
 	DBG("Enable event command for event \'%s\'", event->name);
@@ -1805,7 +1813,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		if (session->kernel_session->has_non_default_channel
 				&& channel_name[0] == '\0') {
 			ret = LTTNG_ERR_NEED_CHANNEL_NAME;
-			goto error;
+			goto error_unlock;
 		}
 
 		kchan = trace_kernel_get_channel_by_name(channel_name,
@@ -1815,17 +1823,17 @@ static int _cmd_enable_event(struct ltt_session *session,
 					LTTNG_BUFFER_GLOBAL);
 			if (attr == NULL) {
 				ret = LTTNG_ERR_FATAL;
-				goto error;
+				goto error_unlock;
 			}
 			if (lttng_strncpy(attr->name, channel_name,
 					sizeof(attr->name))) {
 				ret = LTTNG_ERR_INVALID;
-				goto error;
+				goto error_unlock;
 			}
 
 			ret = cmd_enable_channel(session, domain, attr, wpipe);
 			if (ret != LTTNG_OK) {
-				goto error;
+				goto error_unlock;
 			}
 			channel_created = 1;
 		}
@@ -1836,7 +1844,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		if (kchan == NULL) {
 			/* This sould not happen... */
 			ret = LTTNG_ERR_FATAL;
-			goto error;
+			goto error_unlock;
 		}
 
 		switch (event->type) {
@@ -1844,6 +1852,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		{
 			char *filter_expression_a = NULL;
 			struct lttng_filter_bytecode *filter_a = NULL;
+			struct lttng_event_exclusion *exclusion_a = NULL;
 
 			/*
 			 * We need to duplicate filter_expression and filter,
@@ -1854,7 +1863,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 				filter_expression_a = strdup(filter_expression);
 				if (!filter_expression_a) {
 					ret = LTTNG_ERR_FATAL;
-					goto error;
+					goto error_unlock;
 				}
 			}
 			if (filter) {
@@ -1862,16 +1871,33 @@ static int _cmd_enable_event(struct ltt_session *session,
 				if (!filter_a) {
 					free(filter_expression_a);
 					ret = LTTNG_ERR_FATAL;
-					goto error;
+					goto error_unlock;
 				}
 				memcpy(filter_a, filter, sizeof(*filter_a) + filter->len);
 			}
+			if (exclusion) {
+				exclusion_a = zmalloc(sizeof(*exclusion_a) +
+						(exclusion->count * LTTNG_SYMBOL_NAME_LEN));
+				if (!exclusion_a) {
+					if (filter_expression) {
+						free(filter_expression_a);
+					}
+					if (filter) {
+						free(filter_a);
+					}
+					ret = LTTNG_ERR_FATAL;
+					goto error_unlock;
+				}
+				memcpy(exclusion_a, exclusion, sizeof(*exclusion_a) +
+						(exclusion->count * LTTNG_SYMBOL_NAME_LEN));
+			}
 			event->type = LTTNG_EVENT_TRACEPOINT;	/* Hack */
 			ret = event_kernel_enable_event(kchan, event,
-				filter_expression, filter);
+				filter_expression, filter, exclusion);
 			/* We have passed ownership */
 			filter_expression = NULL;
 			filter = NULL;
+			exclusion = NULL;
 			if (ret != LTTNG_OK) {
 				if (channel_created) {
 					/* Let's not leak a useless channel. */
@@ -1879,16 +1905,18 @@ static int _cmd_enable_event(struct ltt_session *session,
 				}
 				free(filter_expression_a);
 				free(filter_a);
-				goto error;
+				free(exclusion_a);
+				goto error_unlock;
 			}
 			event->type = LTTNG_EVENT_SYSCALL;	/* Hack */
 			ret = event_kernel_enable_event(kchan, event,
-				filter_expression_a, filter_a);
+				filter_expression_a, filter_a, exclusion_a);
 			/* We have passed ownership */
 			filter_expression_a = NULL;
 			filter_a = NULL;
+			exclusion_a = NULL;
 			if (ret != LTTNG_OK) {
-				goto error;
+				goto error_unlock;
 			}
 			break;
 		}
@@ -1897,31 +1925,33 @@ static int _cmd_enable_event(struct ltt_session *session,
 		case LTTNG_EVENT_FUNCTION_ENTRY:
 		case LTTNG_EVENT_TRACEPOINT:
 			ret = event_kernel_enable_event(kchan, event,
-				filter_expression, filter);
+				filter_expression, filter, exclusion);
 			/* We have passed ownership */
 			filter_expression = NULL;
 			filter = NULL;
+			exclusion = NULL;
 			if (ret != LTTNG_OK) {
 				if (channel_created) {
 					/* Let's not leak a useless channel. */
 					kernel_destroy_channel(kchan);
 				}
-				goto error;
+				goto error_unlock;
 			}
 			break;
 		case LTTNG_EVENT_SYSCALL:
 			ret = event_kernel_enable_event(kchan, event,
-				filter_expression, filter);
+				filter_expression, filter, exclusion);
 			/* We have passed ownership */
 			filter_expression = NULL;
 			filter = NULL;
+			exclusion = NULL;
 			if (ret != LTTNG_OK) {
-				goto error;
+				goto error_unlock;
 			}
 			break;
 		default:
 			ret = LTTNG_ERR_UNK;
-			goto error;
+			goto error_unlock;
 		}
 
 		kernel_wait_quiescent(kernel_tracer_fd);
@@ -1941,7 +1971,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		 */
 		if (usess->has_non_default_channel && channel_name[0] == '\0') {
 			ret = LTTNG_ERR_NEED_CHANNEL_NAME;
-			goto error;
+			goto error_unlock;
 		}
 
 		/* Get channel from global UST domain */
@@ -1953,17 +1983,17 @@ static int _cmd_enable_event(struct ltt_session *session,
 					usess->buffer_type);
 			if (attr == NULL) {
 				ret = LTTNG_ERR_FATAL;
-				goto error;
+				goto error_unlock;
 			}
 			if (lttng_strncpy(attr->name, channel_name,
 					sizeof(attr->name))) {
 				ret = LTTNG_ERR_INVALID;
-				goto error;
+				goto error_unlock;
 			}
 
 			ret = cmd_enable_channel(session, domain, attr, wpipe);
 			if (ret != LTTNG_OK) {
-				goto error;
+				goto error_unlock;
 			}
 
 			/* Get the newly created channel reference back */
@@ -1979,7 +2009,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 			 * Python, etc.).
 			 */
 			ret = LTTNG_ERR_INVALID_CHANNEL_DOMAIN;
-			goto error;
+			goto error_unlock;
 		}
 
 		if (!internal_event) {
@@ -1993,7 +2023,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 						event->name ?
 						event->name : "NULL");
 				ret = LTTNG_ERR_INVALID_EVENT_NAME;
-				goto error;
+				goto error_unlock;
 			}
 		}
 
@@ -2008,7 +2038,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		if (ret == LTTNG_ERR_UST_EVENT_ENABLED) {
 			goto already_enabled;
 		} else if (ret != LTTNG_OK) {
-			goto error;
+			goto error_unlock;
 		}
 		break;
 	}
@@ -2029,7 +2059,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 			agt = agent_create(domain->type);
 			if (!agt) {
 				ret = LTTNG_ERR_NOMEM;
-				goto error;
+				goto error_unlock;
 			}
 			agent_add(agt, usess->agents);
 		}
@@ -2042,7 +2072,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 				domain->type);
 		if (!default_event_name) {
 			ret = LTTNG_ERR_FATAL;
-			goto error;
+			goto error_unlock;
 		}
 		strncpy(uevent.name, default_event_name, sizeof(uevent.name));
 		uevent.name[sizeof(uevent.name) - 1] = '\0';
@@ -2082,7 +2112,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 				filter_copy = zmalloc(filter_size);
 				if (!filter_copy) {
 					ret = LTTNG_ERR_NOMEM;
-					goto error;
+					goto error_unlock;
 				}
 				memcpy(filter_copy, filter, filter_size);
 
@@ -2095,7 +2125,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 				if (!filter_expression_copy || !filter_copy) {
 					free(filter_expression_copy);
 					free(filter_copy);
-					goto error;
+					goto error_unlock;
 				}
 			}
 
@@ -2108,7 +2138,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		if (ret == LTTNG_ERR_UST_EVENT_ENABLED) {
 			goto already_enabled;
 		} else if (ret != LTTNG_OK) {
-			goto error;
+			goto error_unlock;
 		}
 
 		/* The wild card * means that everything should be enabled. */
@@ -2122,25 +2152,26 @@ static int _cmd_enable_event(struct ltt_session *session,
 		filter = NULL;
 		filter_expression = NULL;
 		if (ret != LTTNG_OK) {
-			goto error;
+			goto error_unlock;
 		}
 
 		break;
 	}
 	default:
 		ret = LTTNG_ERR_UND;
-		goto error;
+		goto error_unlock;
 	}
 
 	ret = LTTNG_OK;
 
 already_enabled:
+error_unlock:
+	rcu_read_unlock();
 error:
 	free(filter_expression);
 	free(filter);
 	free(exclusion);
 	free(attr);
-	rcu_read_unlock();
 	return ret;
 }
 

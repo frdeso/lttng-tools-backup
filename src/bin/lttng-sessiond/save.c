@@ -388,6 +388,35 @@ int save_kernel_event(struct config_writer *writer,
 		}
 	}
 
+	if (event->exclusion && event->exclusion->count) {
+		uint32_t i;
+
+		ret = config_writer_open_element(writer,
+						config_element_exclusions);
+		if (ret) {
+			ret = LTTNG_ERR_SAVE_IO_FAIL;
+			goto end;
+		}
+
+		for (i = 0; i < event->exclusion->count; i++) {
+			ret = config_writer_write_element_string(writer,
+						config_element_exclusion,
+						LTTNG_EVENT_EXCLUSION_NAME_AT(
+							event->exclusion, i));
+			if (ret) {
+				ret = LTTNG_ERR_SAVE_IO_FAIL;
+				goto end;
+			}
+		}
+
+		/* /exclusions */
+		ret = config_writer_close_element(writer);
+		if (ret) {
+			ret = LTTNG_ERR_SAVE_IO_FAIL;
+			goto end;
+		}
+	}
+
 	if (event->event->instrumentation == LTTNG_KERNEL_FUNCTION ||
 		event->event->instrumentation == LTTNG_KERNEL_KPROBE ||
 		event->event->instrumentation == LTTNG_KERNEL_KRETPROBE) {

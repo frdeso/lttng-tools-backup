@@ -149,7 +149,7 @@ static void test_create_kernel_event(void)
 	ev.type = LTTNG_EVENT_TRACEPOINT;
 	ev.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
 
-	event = trace_kernel_create_event(&ev, NULL, NULL);
+	event = trace_kernel_create_event(&ev, NULL, NULL, NULL);
 	ok(event != NULL, "Create kernel event");
 
 	if (!event) {

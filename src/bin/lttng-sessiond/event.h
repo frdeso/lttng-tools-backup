@@ -27,7 +27,8 @@ int event_kernel_disable_event(struct ltt_kernel_channel *kchan,
 
 int event_kernel_enable_event(struct ltt_kernel_channel *kchan,
 		struct lttng_event *event, char *filter_expression,
-		struct lttng_filter_bytecode *filter);
+		struct lttng_filter_bytecode *filter,
+		struct lttng_event_exclusion *exclusion);
 
 int event_ust_enable_tracepoint(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct lttng_event *event,

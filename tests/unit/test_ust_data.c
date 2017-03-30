@@ -39,7 +39,7 @@
 #define RANDOM_STRING_LEN	11
 
 /* Number of TAP tests in this file */
-#define NUM_TESTS 16
+#define NUM_TESTS 14
 
 /* For error.h */
 int lttng_opt_quiet = 1;
@@ -163,7 +163,6 @@ static void test_create_ust_event_exclusion(void)
 	struct ltt_ust_event *event;
 	struct lttng_event ev;
 	char *name;
-	char *random_name;
 	struct lttng_event_exclusion *exclusion;
 	const int exclusion_count = 2;
 
@@ -177,27 +176,6 @@ static void test_create_ust_event_exclusion(void)
 
 	ev.type = LTTNG_EVENT_TRACEPOINT;
 	ev.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
-
-	/* set up an exclusion set */
-	exclusion = zmalloc(sizeof(*exclusion) +
-		LTTNG_SYMBOL_NAME_LEN * exclusion_count);
-	ok(exclusion != NULL, "Create UST exclusion");
-	if (!exclusion) {
-		skip(4, "zmalloc failed");
-		goto end;
-	}
-
-	exclusion->count = exclusion_count;
-	random_name = get_random_string();
-	strncpy(LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion, 0), random_name,
-		LTTNG_SYMBOL_NAME_LEN);
-	strncpy(LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion, 1), random_name,
-		LTTNG_SYMBOL_NAME_LEN);
-
-	event = trace_ust_create_event(&ev, NULL, NULL, exclusion, false);
-	exclusion = NULL;
-
-	ok(!event, "Create UST event with identical exclusion names fails");
 
 	exclusion = zmalloc(sizeof(*exclusion) +
 		LTTNG_SYMBOL_NAME_LEN * exclusion_count);

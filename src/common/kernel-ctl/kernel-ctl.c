@@ -345,6 +345,28 @@ int kernctl_filter(int fd, struct lttng_filter_bytecode *filter)
 	return ret;
 }
 
+int kernctl_exclusion(int fd, struct lttng_event_exclusion *exclusion)
+{
+	int ret;
+	struct lttng_kernel_event_exclusion *kernel_exclusion = NULL;
+	size_t exclusion_alloc_size = sizeof(*kernel_exclusion) +
+			(exclusion->count * LTTNG_SYMBOL_NAME_LEN);
+
+	kernel_exclusion = zmalloc(exclusion_alloc_size);
+	if (!kernel_exclusion) {
+		return -ENOMEM;
+	}
+
+	assert(sizeof(struct lttng_event_exclusion) ==
+			sizeof(struct lttng_kernel_event_exclusion));
+	memcpy(kernel_exclusion, exclusion, exclusion_alloc_size);
+
+	ret = LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_EXCLUSION, kernel_exclusion);
+	free(kernel_exclusion);
+
+	return ret;
+}
+
 int kernctl_tracepoint_list(int fd)
 {
 	return compat_ioctl_no_arg(fd, LTTNG_KERNEL_OLD_TRACEPOINT_LIST,

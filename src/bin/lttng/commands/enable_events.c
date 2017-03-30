@@ -364,7 +364,7 @@ const char *print_raw_channel_name(const char *name)
 }
 
 /*
- * Mi print exlcusion list
+ * Mi print exclusion list
  */
 static
 int mi_print_exclusion(char **names)
@@ -613,7 +613,6 @@ static int enable_events(char *session_name)
 
 	if (opt_exclude) {
 		switch (dom.type) {
-		case LTTNG_DOMAIN_KERNEL:
 		case LTTNG_DOMAIN_JUL:
 		case LTTNG_DOMAIN_LOG4J:
 		case LTTNG_DOMAIN_PYTHON:
@@ -621,6 +620,7 @@ static int enable_events(char *session_name)
 					get_domain_str(dom.type));
 			ret = CMD_ERROR;
 			goto error;
+		case LTTNG_DOMAIN_KERNEL:
 		case LTTNG_DOMAIN_UST:
 			/* Exclusions supported */
 			break;
@@ -973,29 +973,6 @@ static int enable_events(char *session_name)
 				goto error;
 			}
 
-			if (opt_exclude) {
-				ev.exclusion = 1;
-				if (opt_event_type != LTTNG_EVENT_ALL && opt_event_type != LTTNG_EVENT_TRACEPOINT) {
-					ERR("Exclusion option can only be used with tracepoint events");
-					ret = CMD_ERROR;
-					goto error;
-				}
-				/* Free previously allocated items */
-				strutils_free_null_terminated_array_of_strings(
-					exclusion_list);
-				exclusion_list = NULL;
-				ret = create_exclusion_list_and_validate(
-					event_name, opt_exclude,
-					&exclusion_list);
-				if (ret) {
-					ret = CMD_ERROR;
-					goto error;
-				}
-
-				warn_on_truncated_exclusion_names(
-					exclusion_list, &warn);
-			}
-
 			ev.loglevel_type = opt_loglevel_type;
 			if (opt_loglevel) {
 				ev.loglevel = loglevel_str_to_value(opt_loglevel);
@@ -1043,6 +1020,30 @@ static int enable_events(char *session_name)
 			ev.name[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
 		} else {
 			assert(0);
+		}
+
+		if (opt_exclude) {
+			ev.exclusion = 1;
+			if (opt_event_type != LTTNG_EVENT_ALL
+			    && opt_event_type != LTTNG_EVENT_TRACEPOINT
+			    && opt_event_type != LTTNG_EVENT_SYSCALL ) {
+				ERR("Exclusion option can only be used with tracepoint and syscall events");
+				ret = CMD_ERROR;
+				goto error;
+			}
+			/* Free previously allocated items */
+			strutils_free_null_terminated_array_of_strings(
+				exclusion_list);
+			exclusion_list = NULL;
+			ret = create_exclusion_list_and_validate(event_name,
+							opt_exclude, &exclusion_list);
+			if (ret) {
+				ret = CMD_ERROR;
+				goto error;
+			}
+
+			warn_on_truncated_exclusion_names(
+				exclusion_list, &warn);
 		}
 
 		if (!opt_filter) {

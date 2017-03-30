@@ -23,6 +23,7 @@
 
 #include <common/common.h>
 #include <common/defaults.h>
+#include <common/exclusion.h>
 
 #include "consumer.h"
 #include "trace-kernel.h"
@@ -63,7 +64,8 @@ struct ltt_kernel_channel *trace_kernel_get_channel_by_name(
 struct ltt_kernel_event *trace_kernel_find_event(
 		char *name, struct ltt_kernel_channel *channel,
 		enum lttng_event_type type,
-		struct lttng_filter_bytecode *filter)
+		struct lttng_filter_bytecode *filter,
+		struct lttng_event_exclusion *exclusion)
 {
 	struct ltt_kernel_event *ev;
 	int found = 0;
@@ -85,6 +87,16 @@ struct ltt_kernel_event *trace_kernel_find_event(
 			if (ev->filter->len != filter->len ||
 					memcmp(ev->filter->data, filter->data,
 						filter->len) != 0) {
+				continue;
+			}
+		}
+		if (ev->exclusion && exclusion) {
+			/* Compare all the exclusions of that event */
+			if (compare_exclusion(ev->exclusion, exclusion) != 0) {
+				/**
+				 * The exclusions are different, continue to
+				 * the next event
+				 */
 				continue;
 			}
 		}
@@ -254,7 +266,8 @@ error:
  * Return pointer to structure or NULL.
  */
 struct ltt_kernel_event *trace_kernel_create_event(struct lttng_event *ev,
-		char *filter_expression, struct lttng_filter_bytecode *filter)
+		char *filter_expression, struct lttng_filter_bytecode *filter,
+		struct lttng_event_exclusion *exclusion)
 {
 	struct ltt_kernel_event *lke;
 	struct lttng_kernel_event *attr;
@@ -315,12 +328,14 @@ struct ltt_kernel_event *trace_kernel_create_event(struct lttng_event *ev,
 	lke->enabled = 1;
 	lke->filter_expression = filter_expression;
 	lke->filter = filter;
+	lke->exclusion = exclusion;
 
 	return lke;
 
 error:
 	free(filter_expression);
 	free(filter);
+	free(exclusion);
 	free(lke);
 	free(attr);
 	return NULL;
@@ -450,6 +465,7 @@ void trace_kernel_destroy_event(struct ltt_kernel_event *event)
 
 	free(event->filter_expression);
 	free(event->filter);
+	free(event->exclusion);
 
 	free(event->event);
 	free(event);

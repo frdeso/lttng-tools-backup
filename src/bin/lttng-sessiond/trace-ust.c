@@ -25,6 +25,7 @@
 
 #include <common/common.h>
 #include <common/defaults.h>
+#include <common/exclusion.h>
 
 #include "buffer-registry.h"
 #include "trace-ust.h"
@@ -117,45 +118,9 @@ int trace_ust_ht_match_event(struct cds_lfht_node *node, const void *_key)
 	}
 
 	if (key->exclusion && event->exclusion) {
-		size_t i;
-
-		/* Check exclusion counts first. */
-		if (event->exclusion->count != key->exclusion->count) {
+		/* Compare all the exclusions of that event */
+		if (compare_exclusion(key->exclusion, event->exclusion) != 0) {
 			goto no_match;
-		}
-
-		/* Compare names individually. */
-		for (i = 0; i < event->exclusion->count; ++i) {
-			size_t j;
-		        bool found = false;
-			const char *name_ev =
-				LTTNG_EVENT_EXCLUSION_NAME_AT(
-					event->exclusion, i);
-
-			/*
-			 * Compare this exclusion name to all the key's
-			 * exclusion names.
-			 */
-			for (j = 0; j < key->exclusion->count; ++j) {
-				const char *name_key =
-					LTTNG_EVENT_EXCLUSION_NAME_AT(
-						key->exclusion, j);
-
-				if (!strncmp(name_ev, name_key,
-						LTTNG_SYMBOL_NAME_LEN)) {
-					/* Names match! */
-					found = true;
-					break;
-				}
-			}
-
-			/*
-			 * If the current exclusion name was not found amongst
-			 * the key's exclusion names, then there's no match.
-			 */
-			if (!found) {
-				goto no_match;
-			}
 		}
 	}
 	/* Match. */
@@ -395,39 +360,6 @@ error:
 }
 
 /*
- * Validates an exclusion list.
- *
- * Returns 0 if valid, negative value if invalid.
- */
-static int validate_exclusion(struct lttng_event_exclusion *exclusion)
-{
-	size_t i;
-	int ret = 0;
-
-	assert(exclusion);
-
-	for (i = 0; i < exclusion->count; ++i) {
-		size_t j;
-		const char *name_a =
-			LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion, i);
-
-		for (j = 0; j < i; ++j) {
-			const char *name_b =
-				LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion, j);
-
-			if (!strncmp(name_a, name_b, LTTNG_SYMBOL_NAME_LEN)) {
-				/* Match! */
-				ret = -1;
-				goto end;
-			}
-		}
-	}
-
-end:
-	return ret;
-}
-
-/*
  * Allocate and initialize a ust event. Set name and event type.
  * We own filter_expression, filter, and exclusion.
  *
@@ -442,10 +374,6 @@ struct ltt_ust_event *trace_ust_create_event(struct lttng_event *ev,
 	struct ltt_ust_event *lue;
 
 	assert(ev);
-
-	if (exclusion && validate_exclusion(exclusion)) {
-		goto error;
-	}
 
 	lue = zmalloc(sizeof(struct ltt_ust_event));
 	if (lue == NULL) {

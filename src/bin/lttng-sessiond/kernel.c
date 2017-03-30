@@ -184,7 +184,8 @@ error:
 int kernel_create_event(struct lttng_event *ev,
 		struct ltt_kernel_channel *channel,
 		char *filter_expression,
-		struct lttng_filter_bytecode *filter)
+		struct lttng_filter_bytecode *filter,
+		struct lttng_event_exclusion *exclusion)
 {
 	int ret;
 	struct ltt_kernel_event *event;
@@ -192,9 +193,9 @@ int kernel_create_event(struct lttng_event *ev,
 	assert(ev);
 	assert(channel);
 
-	/* We pass ownership of filter_expression and filter */
+	/* We pass ownership of filter_expression, filter and exclusion */
 	event = trace_kernel_create_event(ev, filter_expression,
-			filter);
+			filter, exclusion);
 	if (event == NULL) {
 		ret = -1;
 		goto error;
@@ -231,6 +232,12 @@ int kernel_create_event(struct lttng_event *ev,
 			goto filter_error;
 		}
 	}
+	if (exclusion) {
+		ret = kernctl_exclusion(event->fd, exclusion);
+		if (ret) {
+			goto exclusion_error;
+		}
+	}
 
 	ret = kernctl_enable(event->fd);
 	if (ret < 0) {
@@ -255,6 +262,7 @@ int kernel_create_event(struct lttng_event *ev,
 
 enable_error:
 filter_error:
+exclusion_error:
 	{
 		int closeret;
 
