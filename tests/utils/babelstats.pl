@@ -19,6 +19,7 @@ use strict;
 use warnings;
 
 use Getopt::Long;
+use Math::BigInt;
 
 my $opt_tracepoint;
 
@@ -124,7 +125,7 @@ sub print_fields_stats
 			@sorted = sort { $a <=> $b } @val;
 		} elsif ($val[0] =~ /^0x[\da-f]+$/i) {
 			# Convert the hex values and sort numerically
-			@sorted = sort { hex($a) <=> hex($b) } @val;
+			@sorted = sort { Math::BigInt->new($a) <=> Math::BigInt->new($b) } @val;
 		} else {
 			# Fallback, alphabetical sort
 			@sorted = sort { lc($a) cmp lc($b) } @val;
