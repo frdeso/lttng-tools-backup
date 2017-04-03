@@ -30,7 +30,10 @@ EVENT_NAME="tp:tptest"
 
 DIR=$(readlink -f $TESTDIR)
 
-NUM_TESTS=67
+NUM_UST_TESTS=68
+NUM_KERNEL_TESTS=6
+NUM_TESTS=$(($NUM_UST_TESTS + $NUM_KERNEL_TESTS))
+
 
 source $TESTDIR/utils/utils.sh
 
@@ -344,6 +347,33 @@ function test_override_session_name()
 	rm -rf ${mi_output_file}
 }
 
+function test_kernel_load()
+{
+	local sess="$SESSION_NAME-kernel"
+	local mi_result=""
+	local ret=1
+	diag "Test kernel load"
+
+	lttng_load_ok "-i $CONFIG_DIR/$sess.lttng"
+
+	# Confirm that an event stored as disabled is restored in its disabled state
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	# Check the event with an exclusion is disabled as in the loaded configuration
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN --mi XML list $sess -c channel0 > $mi_output_file
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:domains/lttng:domain/lttng:channels/lttng:channel[lttng:name='channel0']/lttng:events/lttng:event[lttng:name='kevent3*' and lttng:exclusions[lttng:exclusion='kevent3-42']]/lttng:enabled/text()")
+	test $mi_result = "true"
+	ok $?  "Enabled event with exclusion is loaded in disabled state"
+
+	destroy_lttng_session_ok $sess
+
+	stop_lttng_relayd
+	rm -rf ${mi_output_file}
+}
+
 start_lttng_sessiond
 
 TESTS=(
@@ -358,6 +388,10 @@ TESTS=(
 	test_override_url_live
 )
 
+TESTS_KERNEL=(
+	test_kernel_load
+)
+
 for fct_test in ${TESTS[@]};
 do
 	TRACE_PATH=$(mktemp -d)
@@ -370,4 +404,29 @@ do
 	rm -rf $TRACE_PATH
 done
 
+
+if [ "$(id -u)" == "0" ]; then
+	isroot=1
+else
+	isroot=0
+fi
+
 stop_lttng_sessiond
+
+skip $isroot "Root access is needed. Skipping kernel tests." NUM_KERNEL_TESTS ||
+{
+
+	start_lttng_sessiond
+	for fct_test in ${TESTS_KERNEL[@]};
+	do
+		TRACE_PATH=$(mktemp -d)
+
+		${fct_test}
+		if [ $? -ne 0 ]; then
+			break;
+		fi
+		# Only delete if successful
+		rm -rf $TRACE_PATH
+	done
+	stop_lttng_sessiond
+}
