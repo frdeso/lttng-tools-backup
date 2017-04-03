@@ -95,6 +95,12 @@ function test_complex_load()
 	test $mi_result = "true"
 	ok $?  "Enabled event with same name but different loglevel is in disabled state"
 
+	# Check the event with an exclusion is disabled as in the loaded configuration
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN --mi XML list $sess -c chan3 > $mi_output_file
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:domains/lttng:domain/lttng:channels/lttng:channel[lttng:name='chan3']/lttng:events/lttng:event[lttng:name='uevent3*' and lttng:exclusions[lttng:exclusion='uevent3-42']]/lttng:enabled/text()")
+	test $mi_result = "false"
+	ok $?  "Enabled event with exclusion is loaded in disabled state"
+
 	destroy_lttng_session_ok $sess
 
 	stop_lttng_relayd
