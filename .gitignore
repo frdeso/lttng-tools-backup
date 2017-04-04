@@ -70,6 +70,7 @@ TAGS
 # Tests
 /tests/unit/test_kernel_data
 /tests/unit/test_session
+/tests/unit/test_string_utils
 /tests/unit/test_uri
 /tests/unit/test_ust_data
 /tests/unit/test_utils_parse_size_suffix
@@ -84,6 +85,7 @@ gen-events-time
 gen-events
 gen-ust-events
 health_check
+/tests/regression/kernel/select_poll_epoll
 /tests/regression/tools/mi/extract_xml
 /tests/regression/tools/mi/validate_xml
 /tests/regression/ust/overlap/demo/demo
@@ -103,8 +105,10 @@ tests/regression/ust/python-logging/test_python_logging
 /tests/regression/ust/ust-dl/prog
 /tests/regression/ust/ust-dl/libfoo.so.debug
 /tests/regression/ust/ust-dl/libbar.so.debug
+/tests/regression/ust/ust-dl/libzzz.so.debug
 /tests/utils/testapp/gen-ust-nevents/gen-ust-nevents
 /tests/utils/testapp/gen-ust-tracef/gen-ust-tracef
+/tests/utils/testapp/gen-ust-nevents-str/gen-ust-nevents-str
 /tests/utils/testapp/gen-kernel-tp-events/gen-kernel-tp-events
 /tests/utils/testapp/gen-syscall-events/gen-syscall-events
 /tests/regression/tools/live/live_test
