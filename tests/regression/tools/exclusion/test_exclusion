@@ -25,18 +25,31 @@ SESSION_NAME="test-exclusion"
 TESTAPP_PATH="$TESTDIR/utils/testapp"
 TESTAPP_NAME="gen-ust-nevents"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
+
+TESTAPP_SYSCALL_NAME="gen-syscall-events"
+TESTAPP_SYSCALL_BIN="$TESTAPP_PATH/$TESTAPP_SYSCALL_NAME/$TESTAPP_SYSCALL_NAME"
+
+TESTAPP_KERNEL_TP_NAME="gen-kernel-tp-events"
+TESTAPP_KERNEL_TP_BIN="$TESTAPP_PATH/$TESTAPP_KERNEL_TP_NAME/$TESTAPP_KERNEL_TP_NAME"
 NR_ITER=100
 NR_USEC_WAIT=1
-NUM_TESTS=149
+
+NUM_UST_TESTS=152
+NUM_KERNEL_TESTS=322
+
+NUM_TESTS=$(($NUM_UST_TESTS + $NUM_KERNEL_TESTS))
 
 source $TESTDIR/utils/utils.sh
 
-function enable_ust_lttng_all_event_exclusion()
+function enable_lttng_event_exclusion()
 {
 	sess_name="$1"
-	exclusion="$2"
+	event_name="$2"
+	domain="$3"
+	exclusion="$4"
+	channel="$5"
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-event -a -s $sess_name -u -x "$exclusion"
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-event $domain $event_name -s $sess_name -x "$exclusion" "$channel" > /dev/null 2>&1
 }
 
 function run_apps
@@ -44,42 +57,154 @@ function run_apps
 	 $TESTAPP_BIN $NR_ITER $NR_USEC_WAIT
 }
 
+function run_workload_tracepoint
+{
+	event_type=$1
+	nb_iter=$2
+	uuid=$3
+
+	"$TESTAPP_KERNEL_TP_BIN" event_a 10 $$ &
+	PID=$!
+
+	lttng_track_pid_ok $PID
+	# Send signal to start the workload
+	kill -SIGUSR1 $PID
+	wait $PID
+}
+
+function run_workload_syscall
+{
+	"$TESTAPP_SYSCALL_BIN" &
+	PID=$!
+
+	lttng_track_pid_ok $PID
+	# Send signal to start the workload
+	kill -SIGUSR1 $PID
+	wait $PID
+}
+
+function test_exclusion_verify_absence
+{
+	event_name="$1"
+	domain="$2"
+	exclusions="$3"
+	event_name_expected_to_be_missing="$4"
+
+	test_exclusion "$event_name" "$domain" "$exclusions" "$event_name_expected_to_be_missing" "0"
+}
+
+function test_exclusion_verify_presence
+{
+	event_name="$1"
+	domain="$2"
+	exclusions="$3"
+	event_name_expected_to_be_present="$4"
+
+	test_exclusion "$event_name" "$domain" "$exclusions" "$event_name_expected_to_be_present" "1"
+}
+
 function test_exclusion
 {
-	exclusions="$1"
-	event_name_expected_to_be_missing="$2"
+	event_name_enabler="$1"
+	domain="$2"
+	exclusions="$3"
+	event_name_checker="$4"
+	should_be_present="$5"
+
 	trace_path=$(mktemp -d)
 
 	# Create session
 	create_lttng_session_ok $SESSION_NAME $trace_path
 
-	enable_ust_lttng_all_event_exclusion $SESSION_NAME "$exclusions"
+	# Depending on the domain, assign the enable-event option and the
+	# workload. For kernel tracing, PID tracker is used to trace the
+	# behavior of the workload and not the system.
+	case $domain in
+		USERSPACE)
+			domain="--userspace"
+			workload="run_apps"
+			;;
+		KERNEL)
+			domain="--kernel"
+			workload="run_workload_syscall"
+			lttng_untrack_kernel_all_ok
+			;;
+		KERNEL_SYSCALL)
+			domain="--kernel --syscall"
+			workload="run_workload_syscall"
+			lttng_untrack_kernel_all_ok
+			;;
+		KERNEL_TP)
+			domain="--kernel --tracepoint"
+			workload="run_workload_tracepoint"
+			lttng_untrack_kernel_all_ok
+			;;
+		*)
+			echo "unknowned domain"
+			;;
+	esac
+
+	enable_lttng_event_exclusion "$SESSION_NAME" "$event_name_enabler" "$domain" "$exclusions"
 	ok $? "Enable lttng event with event \"$exclusions\" excluded"
 
 	# Trace apps
 	start_lttng_tracing_ok $SESSION_NAME
-	run_apps
+	eval $workload
 	stop_lttng_tracing_ok $SESSION_NAME
 
 	# Destroy session
 	destroy_lttng_session_ok $SESSION_NAME
 
-	stats=`babeltrace $trace_path | $STATS_BIN --tracepoint "$event_name_expected_to_be_missing" | grep -v index`
-	if [ ! -z "$stats" ]; then
-		fail "Excluded event \"$event_name_expected_to_be_missing\" was found in trace!"
+	if [ "$should_be_present" -eq 0 ]; then
+		# If the event should not be present, check that babelstate returns an empty string
+		stats=$(babeltrace "$trace_path" | "$STATS_BIN" --tracepoint "$event_name_checker" )
+		if [ -z "$stats" ]; then
+			ok 0 "Validate trace exclusion output"
+			rm -rf $trace_path
+		else
+			fail "Excluded event \"$event_name_checker\" was found in trace!"
+		fi
 	else
-		ok 0 "Validate trace exclusion output"
-		rm -rf $trace_path
+		# If the event should be present, check that babelstate returns a non-empty string
+		stats=$(babeltrace "$trace_path" | "$STATS_BIN" --tracepoint "$event_name_checker" )
+		if [ -n "$stats" ]; then
+			ok 0 "Validate trace exclusion output"
+			rm -rf $trace_path
+		else
+			fail "Event \"$event_name_checker\" was not found in trace!"
+		fi
 	fi
 }
 
 function test_exclusion_fail
 {
 	event_name="$1"
-	exclusions="$2"
+	domain="$2"
+	exclusions="$3"
+
+	trace_path=$(mktemp -d)
 
 	create_lttng_session_ok $SESSION_NAME $trace_path
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-event -u "$event_name" -s $sess_name -x "$exclusions" 2&>1 >/dev/null
+
+	case $domain in
+		USERSPACE)
+			domain="--userspace"
+			;;
+		KERNEL)
+			domain="--kernel"
+			;;
+		KERNEL_SYSCALL)
+			domain="--kernel --syscall"
+			;;
+		KERNEL_TP)
+			domain="--kernel --tracepoint"
+			;;
+		*)
+			echo "unknowned domain"
+			;;
+	esac
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-event "$domain" "$event_name" -s $SESSION_NAME -x "$exclusions" >/dev/null 2>&1
 	res=$?
 	destroy_lttng_session_ok $SESSION_NAME
 
@@ -98,36 +223,130 @@ print_test_banner $TEST_DESC
 
 start_lttng_sessiond
 
-test_exclusion 'tp:tptest2' 'tp:tptest2'
-test_exclusion 'tp:tptest3' 'tp:tptest3'
-test_exclusion 'tp:tptest*' 'tp:tptest1'
-test_exclusion 'tp:tptest*' 'tp:tptest2'
-test_exclusion 'tp:tptest*' 'tp:tptest3'
-test_exclusion 'tp:tptest*' 'tp:tptest4'
-test_exclusion 'tp:tptest*' 'tp:tptest5'
-test_exclusion 'tp*tptest*' 'tp:tptest1'
-test_exclusion 'tp*tptest*' 'tp:tptest2'
-test_exclusion 'tp*tptest*' 'tp:tptest3'
-test_exclusion 'tp*tptest*' 'tp:tptest4'
-test_exclusion 'tp*tptest*' 'tp:tptest5'
-test_exclusion '*test2' 'tp:tptest2'
-test_exclusion '*test5' 'tp:tptest5'
-test_exclusion '*p*test*' 'tp:tptest1'
-test_exclusion '*p*test*' 'tp:tptest2'
-test_exclusion '*p*test*' 'tp:tptest3'
-test_exclusion '*p***test*' 'tp:tptest4'
-test_exclusion '*p*test*' 'tp:tptest5'
-test_exclusion '*3' 'tp:tptest3'
-test_exclusion 'tp*test3,*2' 'tp:tptest2'
-test_exclusion '**tp*test3,*2' 'tp:tptest3'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp:tptest2' 'tp:tptest2'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp:tptest3' 'tp:tptest3'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp:tptest*' 'tp:tptest1'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp:tptest*' 'tp:tptest2'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp:tptest*' 'tp:tptest3'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp:tptest*' 'tp:tptest4'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp:tptest*' 'tp:tptest5'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp*tptest*' 'tp:tptest1'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp*tptest*' 'tp:tptest2'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp*tptest*' 'tp:tptest3'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp*tptest*' 'tp:tptest4'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp*tptest*' 'tp:tptest5'
+test_exclusion_verify_absence '-a' 'USERSPACE' '*test2' 'tp:tptest2'
+test_exclusion_verify_absence '-a' 'USERSPACE' '*test5' 'tp:tptest5'
+test_exclusion_verify_absence '-a' 'USERSPACE' '*p*test*' 'tp:tptest1'
+test_exclusion_verify_absence '-a' 'USERSPACE' '*p*test*' 'tp:tptest2'
+test_exclusion_verify_absence '-a' 'USERSPACE' '*p*test*' 'tp:tptest3'
+test_exclusion_verify_absence '-a' 'USERSPACE' '*p***test*' 'tp:tptest4'
+test_exclusion_verify_absence '-a' 'USERSPACE' '*p*test*' 'tp:tptest5'
+test_exclusion_verify_absence '-a' 'USERSPACE' '*3' 'tp:tptest3'
+test_exclusion_verify_absence '-a' 'USERSPACE' 'tp*test3,*2' 'tp:tptest2'
+test_exclusion_verify_absence '-a' 'USERSPACE' '**tp*test3,*2' 'tp:tptest3'
 
 # Cannot use exclusions with non-globbing event name
-test_exclusion_fail "allo" "lol"
-test_exclusion_fail "allo" "meow,lol"
-test_exclusion_fail "allo" "z*em"
+test_exclusion_fail "allo" "USERSPACE" "lol"
+test_exclusion_fail "allo" "USERSPACE" "meow,lol"
+test_exclusion_fail "allo" "USERSPACE" "z*em"
+
+# Repeating exclusion names should fail
+test_exclusion_fail "allo*" "USERSPACE" "yes,yes"
 
 # Exclusion name excludes all possible event names
-test_exclusion_fail "allo*" "all*"
-test_exclusion_fail "allo*" "ze,all*,yes"
+test_exclusion_fail "allo*" "USERSPACE" "all*"
+test_exclusion_fail "allo*" "USERSPACE" "ze,all*,yes"
 
 stop_lttng_sessiond
+
+if [ "$(id -u)" == "0" ]; then
+	isroot=1
+else
+	isroot=0
+fi
+skip $isroot "Root access is needed. Skipping kernel event exclusion tests." NUM_KERNEL_TESTS ||
+{
+	modprobe lttng-test
+	# Only load the test probe
+	start_lttng_sessiond "" --kmod-probes=test
+
+	# If no event are lost, since the testapp is launch and ran the trace is
+	# guaranteed to contain the following events: sched_switch, execve and clone.
+	# These events are used in the following tests.
+
+	# Verify that the excluded events excluded
+	test_exclusion_verify_absence '-a' 'KERNEL' 'open' 'syscall_entry_open'
+	test_exclusion_verify_absence '-a' 'KERNEL' 'ope*' 'syscall_entry_open'
+	test_exclusion_verify_absence '-a' 'KERNEL' 'open,read*' 'syscall_entry_read'
+	test_exclusion_verify_absence '-a' 'KERNEL' 'open,read*,close' 'syscall_entry_close'
+
+	test_exclusion_verify_absence 'lttng_test_event_*' 'KERNEL' 'lttng_test_event_a' 'lttng_test_event_a'
+	test_exclusion_verify_absence '*_test_event_a' 'KERNEL' 'lttng_test_event_a' 'lttng_test_event_a'
+	test_exclusion_verify_absence 'lttng_test_*' 'KERNEL' 'lttng_test_event_*' 'lttng_test_event_a'
+	test_exclusion_verify_absence 'lttng_test_event_*' 'KERNEL' '*test_event_*' 'lttng_test_event_a'
+
+	test_exclusion_verify_absence '-a' 'KERNEL_TP' 'lttng_test_event_a' 'lttng_test_event_a'
+	test_exclusion_verify_absence '-a' 'KERNEL_TP' '*_event_a' 'lttng_test_event_a'
+	test_exclusion_verify_absence '-a' 'KERNEL_TP' 'lttng_test_event_*' 'lttng_test_event_a'
+
+	test_exclusion_verify_absence '-a' 'KERNEL_SYSCALL' 'rea*' 'syscall_entry_read'
+	test_exclusion_verify_absence '-a' 'KERNEL_SYSCALL' 'open,rea*' 'syscall_entry_read'
+	test_exclusion_verify_absence '-a' 'KERNEL_SYSCALL' 'open,rea*,close' 'syscall_entry_read'
+
+	test_exclusion_verify_absence 'rea*,ope*' 'KERNEL_SYSCALL' 'open' 'syscall_entry_open'
+	test_exclusion_verify_absence 'ope*' 'KERNEL_SYSCALL' 'open' 'syscall_exit_open'
+	test_exclusion_verify_absence 'ope*' 'KERNEL_SYSCALL' '*pen' 'syscall_entry_open'
+	test_exclusion_verify_absence 'ope*' 'KERNEL_SYSCALL' '*pen' 'syscall_exit_open'
+	test_exclusion_verify_absence 'ope*' 'KERNEL_SYSCALL' 'op*n' 'syscall_entry_open'
+
+	#Verify that events not excluded are present
+	test_exclusion_verify_presence '-a' 'KERNEL_TP' 'lttng_test_event_b' 'lttng_test_event_a'
+	test_exclusion_verify_presence '-a' 'KERNEL_TP' 'lttng_test_event_b' 'lttng_test_event_a'
+	test_exclusion_verify_presence '-a' 'KERNEL_TP' '*_event_b' 'lttng_test_event_a'
+	test_exclusion_verify_presence '-a' 'KERNEL_TP' 'lttng_test_*_b' 'lttng_test_event_a'
+
+	test_exclusion_verify_presence 'lttng_test_event_*' 'KERNEL_TP' 'lttng_test_event_b' 'lttng_test_event_a'
+	test_exclusion_verify_presence '*_test_event_a' 'KERNEL_TP' 'lttng_test_event_b' 'lttng_test_event_a'
+	test_exclusion_verify_presence 'lttng_test_event_*' 'KERNEL_TP' '*event_b' 'lttng_test_event_a'
+
+	test_exclusion_verify_presence '-a' 'KERNEL' 'hello*,' 'syscall_entry_open'
+	test_exclusion_verify_presence '-a' 'KERNEL' 'hello*,music*' 'syscall_entry_open'
+
+	test_exclusion_verify_presence '-a' 'KERNEL_SYSCALL' 'opa*' 'syscall_entry_open'
+	test_exclusion_verify_presence '-a' 'KERNEL_SYSCALL' 'clown,opa*' 'syscall_entry_open'
+
+	test_exclusion_verify_presence 'rea*' 'KERNEL_SYSCALL' 'hello' 'syscall_entry_read'
+	test_exclusion_verify_presence 'rea*' 'KERNEL_SYSCALL' '*ello' 'syscall_entry_read'
+	test_exclusion_verify_presence 'rea*' 'KERNEL_SYSCALL' 'hel*o' 'syscall_entry_read'
+	test_exclusion_verify_presence 'rea*' 'KERNEL_SYSCALL' 'hell*' 'syscall_entry_read'
+
+	# Cannot use exclusions with non-globbing event name
+	test_exclusion_fail "allo" "KERNEL" "lol"
+	test_exclusion_fail "allo" "KERNEL" "meow,lol"
+	test_exclusion_fail "allo" "KERNEL" "z*em"
+
+	test_exclusion_fail "allo" "KERNEL_TP" "lol"
+	test_exclusion_fail "allo" "KERNEL_TP" "meow,lol"
+	test_exclusion_fail "allo" "KERNEL_TP" "z*em"
+
+	test_exclusion_fail "allo" "KERNEL_SYSCALL" "lol"
+	test_exclusion_fail "allo" "KERNEL_SYSCALL" "meow,lol"
+	test_exclusion_fail "allo" "KERNEL_SYSCALL" "z*em"
+
+	# Repeating exclusion names should fail
+	test_exclusion_fail "allo*" "KERNEL" "yes,yes"
+
+	# Exclusion name excludes all possible event names
+	test_exclusion_fail "allo*" "KERNEL" "all*"
+	test_exclusion_fail "allo*" "KERNEL" "ze,all*,yes"
+
+	test_exclusion_fail "allo*" "KERNEL_TP" "all*"
+	test_exclusion_fail "allo*" "KERNEL_TP" "ze,all*,yes"
+
+	test_exclusion_fail "allo*" "KERNEL_SYSCALL" "all*"
+	test_exclusion_fail "allo*" "KERNEL_SYSCALL" "ze,all*,yes"
+
+	stop_lttng_sessiond
+	rmmod lttng-test
+}
