@@ -32,7 +32,7 @@
 #define RANDOM_STRING_LEN	11
 
 /* Number of TAP tests in this file */
-#define NUM_TESTS 11
+#define NUM_TESTS 15
 
 /* For error.h */
 int lttng_opt_quiet = 1;
@@ -168,6 +168,62 @@ static void test_create_kernel_event(void)
 	trace_kernel_destroy_event(event);
 }
 
+static void test_create_kernel_event_exclusion(void)
+{
+	struct ltt_kernel_event *event;
+	struct lttng_event ev;
+	char *name;
+	struct lttng_event_exclusion *exclusion;
+	const int exclusion_count = 2;
+
+	memset(&ev, 0, sizeof(ev));
+
+	/* make a wildcarded event name */
+	name = get_random_string();
+	name[strlen(name) - 1] = '*';
+	ok(lttng_strncpy(ev.name, name, LTTNG_SYMBOL_NAME_LEN) == 0,
+		"Validate string length");
+
+	ev.type = LTTNG_EVENT_TRACEPOINT;
+	ev.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
+
+	/* set up an exclusion set */
+	exclusion = zmalloc(sizeof(*exclusion) +
+		LTTNG_SYMBOL_NAME_LEN * exclusion_count);
+	ok(exclusion != NULL, "Create Kernel exclusion");
+	if (!exclusion) {
+		skip(2, "zmalloc failed");
+		return;
+	}
+
+	exclusion->count = exclusion_count;
+	strncpy(LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion, 0),
+		get_random_string(), LTTNG_SYMBOL_NAME_LEN);
+	strncpy(LTTNG_EVENT_EXCLUSION_NAME_AT(exclusion, 1),
+		get_random_string(), LTTNG_SYMBOL_NAME_LEN);
+
+	event = trace_kernel_create_event(&ev, NULL, NULL, exclusion);
+	ok(event != NULL, "Create Kernel event with different exclusion names");
+
+	if (!event) {
+		skip(1, "Kernel event with exclusion is null");
+		return;
+	}
+
+	ok(event->fd == -1 && event->enabled == 1 &&
+	   event->event->instrumentation == LTTNG_KERNEL_TRACEPOINT &&
+	   strcmp(event->event->name, ev.name) == 0 &&
+	   event->exclusion != NULL &&
+	   event->exclusion->count == exclusion_count &&
+	   !memcmp(event->exclusion->names, exclusion->names,
+		LTTNG_SYMBOL_NAME_LEN * exclusion_count) &&
+	   event->event->name[LTTNG_KERNEL_SYM_NAME_LEN - 1] == '\0',
+	   "Validate Kernel event and exclusion");
+
+	/* Init list in order to avoid sefaults from cds_list_del */
+	CDS_INIT_LIST_HEAD(&event->list);
+	trace_kernel_destroy_event(event);
+}
 static void test_create_kernel_stream(void)
 {
 	struct ltt_kernel_stream *stream;
@@ -199,6 +255,7 @@ int main(int argc, char **argv)
 	test_create_kernel_metadata();
 	test_create_kernel_channel();
 	test_create_kernel_event();
+	test_create_kernel_event_exclusion();
 	test_create_kernel_stream();
 
 	/* Success */
